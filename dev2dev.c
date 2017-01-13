@@ -20,18 +20,20 @@ static struct class *dma_tm_class;
 
 struct dma_chan *dma_m2m_chan;
 
+struct scatterlist sg[1], sg2[1];
+
 struct completion dma_m2m_ok;
 
 #define DMA_DATA_ADDR           0x30000000
-#define DMA_DATA_LENGTH         0x00010000
+#define DMA_DATA_LENGTH         0x00001000
 
 #define BUFF_DATA_ADDR          0x40000000
-#define BUFF_DATA_LENGTH        0x00010000
+#define BUFF_DATA_LENGTH        0x00001000
 
 u32 *data_addr;
 u32 *buff_addr;
 
-#define SDMA_BUF_SIZE  (1024 * 10)
+#define SDMA_BUF_SIZE  (0x00001000)
 
 struct timeval end_time;
 unsigned long end, start;
@@ -99,7 +101,9 @@ ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 
 static void dma_m2m_callback(void *data)
 {
+	printk ("************************ **************** \n");
 	printk("in %s\n",__func__);
+	printk ("************************ **************** \n");
 	complete(&dma_m2m_ok);
 	return ;
 }
@@ -121,7 +125,7 @@ ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 	}
 	printk ("---------------------------------------------------- \n");
 
-	dma_m2m_config.direction = DMA_DEV_TO_DEV;
+	dma_m2m_config.direction = DMA_MEM_TO_MEM;
 	dma_m2m_config.src_addr = DMA_DATA_ADDR;
 	dma_m2m_config.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 	dma_m2m_config.src_maxburst = 64;
@@ -135,7 +139,18 @@ ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 		return ret;
 	}
 
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan, NULL, 0, dma_m2m_config.direction, 1, NULL);
+	sg_init_table(sg, 1);
+	sg_set_buf(&sg[0], data_addr, SDMA_BUF_SIZE);
+	ret = dma_map_sg(NULL, sg, 1, dma_m2m_config.direction);
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan, sg, 1, dma_m2m_config.direction, 1, NULL);
+	if (!dma_m2m_desc) {
+		printk ("dma_m2m_desc is failed \n");
+	}
+
+	sg_init_table(sg2, 1);
+	sg_set_buf(&sg2[0], buff_addr, SDMA_BUF_SIZE);
+	ret = dma_map_sg(NULL, sg2, 1, dma_m2m_config.direction);
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan, sg2, 1, dma_m2m_config.direction, 0, NULL);
 	if (!dma_m2m_desc) {
 		printk ("dma_m2m_desc is failed \n");
 	}
@@ -143,6 +158,8 @@ ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 	dma_m2m_desc->callback = dma_m2m_callback;
 	dmaengine_submit(dma_m2m_desc);
 	dma_async_issue_pending(dma_m2m_chan);
+
+	wait_for_completion(&dma_m2m_ok);
 
 	return 0;
 }
