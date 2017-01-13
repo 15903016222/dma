@@ -17,21 +17,20 @@
 
 static int gMajor; /* major number of device */
 static struct class *dma_tm_class;
+u32 *wbuf;
+u32 *rbuf;
 
 struct dma_chan *dma_m2m_chan;
 
-struct scatterlist sg[1], sg2[1];
-
 struct completion dma_m2m_ok;
+
+struct scatterlist sg[1], sg2[1];
 
 #define DMA_DATA_ADDR           0x30000000
 #define DMA_DATA_LENGTH         0x00001000
 
 #define BUFF_DATA_ADDR          0x40000000
 #define BUFF_DATA_LENGTH        0x00001000
-
-u32 *data_addr;
-u32 *buff_addr;
 
 #define SDMA_BUF_SIZE  (0x00001000)
 
@@ -64,15 +63,17 @@ int sdma_open(struct inode * inode, struct file * filp)
 		return -EINVAL;
 	}
 
+	/* ************************************************************** */
 	request_mem_region(DMA_DATA_ADDR, DMA_DATA_LENGTH, "dma_data");
-	data_addr = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
-	memset((void*)data_addr , 'A' , DMA_DATA_LENGTH) ;
+	wbuf = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
+	memset((void*)wbuf , 'A' , DMA_DATA_LENGTH) ;
 	printk("ioremap buff_data succeed\n");
 
 	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "buff_data");
-	buff_addr = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
-	memset((void*)buff_addr , 'B' , BUFF_DATA_LENGTH) ;
+	rbuf = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
+	memset((void*)rbuf , 'B' , BUFF_DATA_LENGTH) ;
 	printk("ioremap dma_data succeed\n");
+	/* ************************************************************** */
 
 	return 0;
 }
@@ -81,29 +82,35 @@ int sdma_release(struct inode * inode, struct file * filp)
 {
 	dma_release_channel(dma_m2m_chan);
 	dma_m2m_chan = NULL;
-
+	kfree(wbuf);
+	kfree(rbuf);
 	return 0;
 }
 
 ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 								loff_t * offset)
 {
-	u32 i;
-	
-	printk ("-------------------------------------------------------- \n");
-	for (i = 0; i < 10; ++i) {
-		printk ("*(data_addr + %d) = 0x%x --- *(buff_addr + %d) = 0x%x \n", i, *(data_addr + i), i, *(buff_addr + i));
+	int i;
+
+	printk ("****************** sdma_read is starting ******************* \n");
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		if (*(rbuf+i) != *(wbuf+i)) {
+			printk("buffer 1 copy falled!\n");
+			return 0;
+		}
 	}
-	printk ("-------------------------------------------------------- \n");
+	for (i = 0; i < 10; ++i) {
+		printk ("*(rbuf + %d) = 0x%x -- *(wbuf + %d) = 0x%x \n", i, *(rbuf + i), i, *(wbuf + i));
+	}
+	printk("buffer 1 copy passed!\n");
+	printk ("****************** sdma_read is over ******************* \n");
 
 	return 0;
 }
 
 static void dma_m2m_callback(void *data)
 {
-	printk ("************************ **************** \n");
 	printk("in %s\n",__func__);
-	printk ("************************ **************** \n");
 	complete(&dma_m2m_ok);
 	return ;
 }
@@ -111,55 +118,50 @@ static void dma_m2m_callback(void *data)
 ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 								loff_t * offset)
 {
-	u32 i, ret;
+	u32 *index1, i, ret;
 	struct dma_slave_config dma_m2m_config = {0};
 	struct dma_async_tx_descriptor *dma_m2m_desc;
 
-	printk ("---------------------------------------------------- \n");
-	for (i = 0; i < 10; ++i) {
-		printk ("*(data_addr + %d) = 0x%x \n", i, *(data_addr + i));
+	index1 = wbuf;
+
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		*(index1 + i) = 0x12121212;
 	}
-	printk ("---------------------------------------------------- \n");
 	for (i = 0; i < 10; ++i) {
-		printk ("*(buff_addr + %d) = 0x%x \n", i, *(buff_addr + i));
+		printk ("*(rbuf + %d) = 0x%x -- *(wbuf + %d) = 0x%x \n", i, *(rbuf + i), i, *(wbuf + i));
 	}
-	printk ("---------------------------------------------------- \n");
+
+	printk ("****************** init is over ******************* \n");
 
 	dma_m2m_config.direction = DMA_MEM_TO_MEM;
-	dma_m2m_config.src_addr = DMA_DATA_ADDR;
-	dma_m2m_config.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
-	dma_m2m_config.src_maxburst = 64;
-	dma_m2m_config.dst_addr = BUFF_DATA_ADDR;
 	dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
-	dma_m2m_config.dst_maxburst = 64;
-
-	ret = dmaengine_slave_config(dma_m2m_chan, &dma_m2m_config);
-	if (ret < 0) {
-		printk("dmaengine slave config failed\n");
-		return ret;
-	}
+	dmaengine_slave_config(dma_m2m_chan, &dma_m2m_config);
 
 	sg_init_table(sg, 1);
-	sg_set_buf(&sg[0], data_addr, SDMA_BUF_SIZE);
+	sg_set_buf(&sg[0], wbuf, SDMA_BUF_SIZE);
 	ret = dma_map_sg(NULL, sg, 1, dma_m2m_config.direction);
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan, sg, 1, dma_m2m_config.direction, 1, NULL);
-	if (!dma_m2m_desc) {
-		printk ("dma_m2m_desc is failed \n");
-	}
+
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan,sg, 1, dma_m2m_config.direction, 1, NULL);
 
 	sg_init_table(sg2, 1);
-	sg_set_buf(&sg2[0], buff_addr, SDMA_BUF_SIZE);
+	sg_set_buf(&sg2[0], rbuf, SDMA_BUF_SIZE);
 	ret = dma_map_sg(NULL, sg2, 1, dma_m2m_config.direction);
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan, sg2, 1, dma_m2m_config.direction, 0, NULL);
-	if (!dma_m2m_desc) {
-		printk ("dma_m2m_desc is failed \n");
-	}
+
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan,sg2, 1, dma_m2m_config.direction, 0, NULL);
 
 	dma_m2m_desc->callback = dma_m2m_callback;
 	dmaengine_submit(dma_m2m_desc);
+
+    do_gettimeofday(&end_time);
+    start = end_time.tv_sec*1000000 + end_time.tv_usec;
 	dma_async_issue_pending(dma_m2m_chan);
 
 	wait_for_completion(&dma_m2m_ok);
+    do_gettimeofday(&end_time);
+    end = end_time.tv_sec*1000000 + end_time.tv_usec;
+    printk("end - start = %d\n", end - start);
+	dma_unmap_sg(NULL, sg, 1, dma_m2m_config.direction);
+	dma_unmap_sg(NULL, sg2, 1, dma_m2m_config.direction);
 
 	return 0;
 }
@@ -230,6 +232,7 @@ static void sdma_cleanup_module(void)
 
 	printk("SDMA test Driver Module Unloaded\n");
 }
+
 
 module_init(sdma_init_module);
 module_exit(sdma_cleanup_module);

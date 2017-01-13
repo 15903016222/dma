@@ -1,8 +1,8 @@
 # mxc_test:
 #	$(CC) mxc_test.c -o mxc_test
 
-obj-m +=mxc_sdma_memcopy_test.o
-# obj-m +=dev2dev.o
+# obj-m +=mxc_sdma_memcopy_test.o
+obj-m +=dev2dev.o
 # obj-m +=dma.o
 # obj-m +=dma_sg.o
 # obj-m +=m2m.o
