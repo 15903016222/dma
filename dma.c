@@ -110,8 +110,9 @@ static int sdma_test(void)
 	dma_cap_set(DMA_SLAVE, dma_m2m_mask);
 	m2m_dma_data.peripheral_type = IMX_DMATYPE_MEMORY;
 	m2m_dma_data.priority = DMA_PRIO_HIGH;
-
+	printk ("Before dma_request_channel \n");
 	dma_m2m_chan_rx = dma_request_channel(dma_m2m_mask, dma_m2m_filter, &m2m_dma_data);
+	printk ("After dma_request_channel \n");
 	if (!dma_m2m_chan_rx) {
 		printk("Error opening the SDMA memory to memory channel\n");
 		return -EINVAL;
@@ -121,7 +122,9 @@ static int sdma_test(void)
 	dma_m2m_config.src_addr = DMA_DATA_ADDR;
 	dma_m2m_config.src_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 	dma_m2m_config.src_maxburst = 64;
+	printk ("Before dmaengine_slave_config \n");
 	ret = dmaengine_slave_config(dma_m2m_chan_rx, &dma_m2m_config);
+	printk ("After dmaengine_slave_config \n");
 	if (ret < 0) {
 		printk("dmaengine slave config failed\n");
 		return ret;
@@ -143,11 +146,40 @@ static int sdma_test(void)
 		return ret;
 	}
 
+/* ---------------------------------------------------------------------- */	
+	sg_init_table(sg, 1);
+	printk("finish sg_init_table\n");
+
+	sg_set_buf(sg, wbuf, SDMA_BUF_SIZE);
+	printk("finish sg_set_buf\n");
+
+	ret = dma_map_sg(NULL, sg, 1, DMA_FROM_DEVICE);
+	if (ret < 0) {
+		printk("DMA mapping error.\n");
+		return ret;
+	}
+
+	printk ("Before dma_prep_slave_sg \n");
+	dma_m2m_desc_rx = dma_m2m_chan_rx->device->device_prep_slave_sg(dma_m2m_chan_rx, sg, 1, DMA_DEV_TO_MEM, 1, NULL);
+	printk ("After dma_prep_slave_sg \n");
+
+	dma_m2m_desc_rx->callback = dma_m2m_callback_rx;
+	printk ("Before dma_submit \n");
+	dma_m2m_desc_rx->tx_submit (dma_m2m_desc_rx);
+	printk ("After dma_submit \n");
+	printk ("Before dma_issue_pending \n");
+	dma_m2m_chan_rx->device->device_issue_pending(dma_m2m_chan_rx);
+	printk ("After dma_issue_pending \n");
+/* --------------------------------------------------------------------- */
+
+	wait_for_completion(&dma_m2m_ok);
+	init_completion(&dma_m2m_ok);
+
 /* --------------------------------------------------------------------- */
 	sg_init_table(sg2, 1);
 	printk("finish sg_init_table\n");
 
-	sg_set_buf(sg2, wbuf, SDMA_BUF_SIZE);
+	sg_set_buf(sg2, rbuf, SDMA_BUF_SIZE);
 	printk("finish sg_set_buf\n");
 
 	ret = dma_map_sg(NULL, sg2, 1, DMA_FROM_DEVICE);
@@ -156,34 +188,12 @@ static int sdma_test(void)
 		return ret;
 	}
 
-	dma_m2m_desc_tx = dma_m2m_chan_tx->device->device_prep_slave_sg(dma_m2m_chan_tx, sg2, 1, dma_m2m_config.direction, 0, NULL);
+	dma_m2m_desc_tx = dma_m2m_chan_tx->device->device_prep_slave_sg(dma_m2m_chan_tx, sg2, 1, DMA_MEM_TO_DEV, 0, NULL);
 
 	dma_m2m_desc_tx->callback = dma_m2m_callback_tx;
 	dma_m2m_desc_tx->tx_submit (dma_m2m_desc_tx);
 	dma_m2m_chan_tx->device->device_issue_pending(dma_m2m_chan_tx);
-/* --------------------------------------------------------------------- */
 
-	wait_for_completion(&dma_m2m_ok);
-	init_completion(&dma_m2m_ok);
-
-/* ---------------------------------------------------------------------- */	
-	sg_init_table(sg, 1);
-	printk("finish sg_init_table\n");
-
-	sg_set_buf(sg, rbuf, SDMA_BUF_SIZE);
-	printk("finish sg_set_buf\n");
-
-	ret = dma_map_sg(NULL, sg, 1, DMA_TO_DEVICE);
-	if (ret < 0) {
-		printk("DMA mapping error.\n");
-		return ret;
-	}
-
-	dma_m2m_desc_rx = dma_m2m_chan_rx->device->device_prep_slave_sg(dma_m2m_chan_rx, sg, 1, dma_m2m_config.direction, 1, NULL);
-
-	dma_m2m_desc_rx->callback = dma_m2m_callback_rx;
-	dma_m2m_desc_rx->tx_submit (dma_m2m_desc_rx);
-	dma_m2m_chan_rx->device->device_issue_pending(dma_m2m_chan_rx);
 /* --------------------------------------------------------------------- */
 
 	wait_for_completion(&dma_m2m_ok);
