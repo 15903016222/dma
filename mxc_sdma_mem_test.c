@@ -7,7 +7,11 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/delay.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,35))
 #include <linux/platform_data/dma-imx.h>
+#else
+#include <mach/dma.h>
+#endif
 
 #include <linux/dmaengine.h>
 #include <linux/device.h>
@@ -15,27 +19,26 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 
+#define DMA_DATA_ADDR           0x30000000
+#define DMA_DATA_LENGTH         0x10000000
+
+#define BUFF_DATA_ADDR          0x40000000
+#define BUFF_DATA_LENGTH        0x10000000
+
 static int gMajor; /* major number of device */
 static struct class *dma_tm_class;
-u32 *wbuf;
-u32 *rbuf;
+u32 *wbuf, *wbuf2, *wbuf3, *wbuf4;
+u32 *rbuf, *rbuf2, *rbuf3, *rbuf4;
 
 struct dma_chan *dma_m2m_chan;
 
 struct completion dma_m2m_ok;
 
-struct scatterlist sg[1], sg2[1];
+struct scatterlist sg[3], sg2[3];
 
-#define DMA_DATA_ADDR           0x30000000
-#define DMA_DATA_LENGTH         0x00001000
+#define SDMA_BUF_SIZE  1024
 
-#define BUFF_DATA_ADDR          0x40000000
-#define BUFF_DATA_LENGTH        0x00001000
 
-#define SDMA_BUF_SIZE  (0x00001000)
-
-struct timeval end_time;
-unsigned long end, start;
 
 static bool dma_m2m_filter(struct dma_chan *chan, void *param)
 {
@@ -47,7 +50,6 @@ static bool dma_m2m_filter(struct dma_chan *chan, void *param)
 
 int sdma_open(struct inode * inode, struct file * filp)
 {
-	int i;
 	dma_cap_mask_t dma_m2m_mask;
 	struct imx_dma_data m2m_dma_data = {0};
 
@@ -56,41 +58,73 @@ int sdma_open(struct inode * inode, struct file * filp)
 	dma_cap_zero(dma_m2m_mask);
 	dma_cap_set(DMA_SLAVE, dma_m2m_mask);
 	m2m_dma_data.peripheral_type = IMX_DMATYPE_MEMORY;
-	m2m_dma_data.priority = DMA_PRIO_MEDIUM;
+	m2m_dma_data.priority = DMA_PRIO_HIGH;
 
 	dma_m2m_chan = dma_request_channel(dma_m2m_mask, dma_m2m_filter, &m2m_dma_data);
-	if (dma_m2m_chan) {
-		printk("Success opening the SDMA memory to memory channel\n");
-	} else {
+	if (!dma_m2m_chan) {
 		printk("Error opening the SDMA memory to memory channel\n");
 		return -EINVAL;
 	}
 
-	/* ************************************************************** */
-	request_mem_region(DMA_DATA_ADDR, DMA_DATA_LENGTH, "dma_data");
-	wbuf = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
-	memset((void*)wbuf , 'A' , DMA_DATA_LENGTH) ;
-	for (i = 0; i < 10; ++i) {
-		printk ("*(wbuf + i) = 0x%x \n", *(wbuf + i));
+	wbuf = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!wbuf) {
+		printk("error wbuf !!!!!!!!!!!\n");
+		return -1;
 	}
+
+	wbuf2 = kzalloc(SDMA_BUF_SIZE/2, GFP_DMA);
+	if(!wbuf2) {
+		printk("error wbuf2 !!!!!!!!!!!\n");
+		return -1;
+	}
+
+	wbuf3 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!wbuf3) {
+		printk("error wbuf3 !!!!!!!!!!!\n");
+		return -1;
+	}
+
+/*	wbuf4 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!wbuf4) {
+		printk("error wbuf4 !!!!!!!!!!!\n");
+		return -1;
+	}
+*/
+
+	rbuf = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!rbuf) {
+		printk("error rbuf !!!!!!!!!!!\n");
+		return -1;
+	}
+
+	rbuf2 = kzalloc(SDMA_BUF_SIZE/2, GFP_DMA);
+	if(!rbuf2) {
+		printk("error rbuf2 !!!!!!!!!!!\n");
+		return -1;
+	}
+
+	rbuf3 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!rbuf3) {
+		printk("error rbuf3 !!!!!!!!!!!\n");
+		return -1;
+	}
+///////////////////////////////////////////////////////////
+	request_mem_region(DMA_DATA_ADDR, DMA_DATA_LENGTH, "wbuf4");
+	wbuf4 = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
+	memset((void*)wbuf4 , 'A' , DMA_DATA_LENGTH) ;
 	printk("ioremap buff_data succeed\n");
 
-/*	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "buff_data");
-	rbuf = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
-	memset((void*)rbuf , 'B' , BUFF_DATA_LENGTH) ;
-*/
-	rbuf = kmalloc(SDMA_BUF_SIZE, GFP_DMA);
-    if(!rbuf) {
-        printk("error rbuf !!!!!!!!!!!\n");
-        return -1;
-    }
-	memset((void*)rbuf , 'B' , BUFF_DATA_LENGTH) ;
-	for (i = 0; i < 10; ++i) {
-		printk ("*(rbuf + i) = 0x%x \n", *(rbuf + i));
-	}
-	printk("ioremap dma_data succeed\n");
-	/* ************************************************************** */
+	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "rbuf4");
+	rbuf4 = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
+	memset((void*)rbuf4 , 0 , BUFF_DATA_LENGTH) ;
 
+///////////////////////////////////////////////////////////
+/*	rbuf4 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
+	if(!rbuf4) {
+		printk("error rbuf4 !!!!!!!!!!!\n");
+		return -1;
+	}
+*/
 	return 0;
 }
 
@@ -98,10 +132,14 @@ int sdma_release(struct inode * inode, struct file * filp)
 {
 	dma_release_channel(dma_m2m_chan);
 	dma_m2m_chan = NULL;
-//	kfree(wbuf);
-	iounmap (wbuf);
+	kfree(wbuf);
+	kfree(wbuf2);
+	kfree(wbuf3);
+	iounmap(wbuf4);
 	kfree(rbuf);
-//	iounmap (rbuf);
+	kfree(rbuf2);
+	kfree(rbuf3);
+	iounmap(rbuf4);
 	return 0;
 }
 
@@ -110,18 +148,37 @@ ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 {
 	int i;
 
-	printk ("****************** sdma_read is starting ******************* \n");
 	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
 		if (*(rbuf+i) != *(wbuf+i)) {
 			printk("buffer 1 copy falled!\n");
 			return 0;
 		}
 	}
-	for (i = 0; i < 10; ++i) {
-		printk ("*(rbuf + %d) = 0x%x -- *(wbuf + %d) = 0x%x \n", i, *(rbuf + i), i, *(wbuf + i));
-	}
 	printk("buffer 1 copy passed!\n");
-	printk ("****************** sdma_read is over ******************* \n");
+
+	for (i=0; i<SDMA_BUF_SIZE/2/4; i++) {
+		if (*(rbuf2+i) != *(wbuf2+i)) {
+			printk("buffer 2 copy falled!\n");
+			return 0;
+		}
+	}
+	printk("buffer 2 copy passed!\n");
+
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		if (*(rbuf3+i) != *(wbuf3+i)) {
+			printk("buffer 3 copy falled!\n");
+			return 0;
+		}
+	}
+	printk("buffer 3 copy passed!\n");
+
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		if (*(rbuf4+i) != *(wbuf4+i)) {
+			printk("buffer 4 copy falled!,r=%x,w=%x,%d\n", *(rbuf4+i), *(wbuf4+i), i);
+			return 0;
+		}
+	}
+	printk("buffer 4 copy passed!\n");
 
 	return 0;
 }
@@ -136,48 +193,65 @@ static void dma_m2m_callback(void *data)
 ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 								loff_t * offset)
 {
-	u32 *index1, i, ret;
+	u32 *index1, *index2, *index3, i, ret;
 	struct dma_slave_config dma_m2m_config = {0};
 	struct dma_async_tx_descriptor *dma_m2m_desc;
+	u32 *index4 = wbuf4;
+	dma_addr_t dma_src, dma_dst;
 
 	index1 = wbuf;
+	index2 = wbuf2;
+	index3 = wbuf3;
 
-	printk ("****************** init is start ******************* \n");
 	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
 		*(index1 + i) = 0x12121212;
 	}
-	for (i = 0; i < 10; ++i) {
-		printk ("*(rbuf + %d) = 0x%x -- *(wbuf + %d) = 0x%x \n", i, *(rbuf + i), i, *(wbuf + i));
+
+	for (i=0; i<SDMA_BUF_SIZE/2/4; i++) {
+		*(index2 + i) = 0x34343434;
 	}
-	printk ("****************** init is over ******************* \n");
+
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		*(index3 + i) = 0x56565656;
+	}
+
+	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
+		*(index4 + i) = 0x56565656;
+	}
 
 	dma_m2m_config.direction = DMA_MEM_TO_MEM;
-	dma_m2m_config.src_addr = DMA_DATA_ADDR;
-//	dma_m2m_config.dst_addr = BUFF_DATA_ADDR;
 	dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 	dmaengine_slave_config(dma_m2m_chan, &dma_m2m_config);
 
-/*	sg_init_table(sg, 1);
+	sg_init_table(sg, 3);
 	sg_set_buf(&sg[0], wbuf, SDMA_BUF_SIZE);
-	ret = dma_map_sg(NULL, sg, 1, dma_m2m_config.direction);
+	sg_set_buf(&sg[1], wbuf2, SDMA_BUF_SIZE/2);
+	sg_set_buf(&sg[2], wbuf3, SDMA_BUF_SIZE);
+	ret = dma_map_sg(NULL, sg, 3, dma_m2m_config.direction);
 
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan,sg, 1, dma_m2m_config.direction, 1, NULL);
-*/
-	sg_init_table(sg2, 1);
+	sg_init_table(sg2, 3);
 	sg_set_buf(&sg2[0], rbuf, SDMA_BUF_SIZE);
-	ret = dma_map_sg(NULL, sg2, 1, dma_m2m_config.direction);
-	printk ("%s [%s] : %d ret = %d \n", __FILE__, __func__, __LINE__, ret);
+	sg_set_buf(&sg2[1], rbuf2, SDMA_BUF_SIZE/2);
+	sg_set_buf(&sg2[2], rbuf3, SDMA_BUF_SIZE);
+	ret = dma_map_sg(NULL, sg2, 3, dma_m2m_config.direction);
 
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_slave_sg(dma_m2m_chan,sg2, 1, dma_m2m_config.direction, DMA_PREP_INTERRUPT|DMA_CTRL_ACK, NULL);
-	printk ("%s [%s] : %d dma_m2m_desc = 0x%p \n", __FILE__, __func__, __LINE__, dma_m2m_desc);
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_dma_sg(dma_m2m_chan,sg2, 3, sg, 3, 0);
 
 	dma_m2m_desc->callback = dma_m2m_callback;
 	dmaengine_submit(dma_m2m_desc);
 	dma_async_issue_pending(dma_m2m_chan);
 
 	wait_for_completion(&dma_m2m_ok);
-//	dma_unmap_sg(NULL, sg, 1, dma_m2m_config.direction);
-	dma_unmap_sg(NULL, sg2, 1, dma_m2m_config.direction);
+	dma_unmap_sg(NULL, sg, 3, dma_m2m_config.direction);
+	dma_unmap_sg(NULL, sg2, 3, dma_m2m_config.direction);
+
+	dma_m2m_desc = dma_m2m_chan->device->device_prep_dma_memcpy(dma_m2m_chan, BUFF_DATA_ADDR, DMA_DATA_ADDR, DMA_DATA_LENGTH,0);
+	if (!dma_m2m_desc)
+		printk("prep error!!\n");
+	dma_m2m_desc->callback = dma_m2m_callback;
+	dmaengine_submit(dma_m2m_desc);
+	dma_async_issue_pending(dma_m2m_chan);
+	wait_for_completion(&dma_m2m_ok);
 
 	return 0;
 }
