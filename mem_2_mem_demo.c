@@ -7,11 +7,7 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/delay.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,35))
 #include <linux/platform_data/dma-imx.h>
-#else
-#include <mach/dma.h>
-#endif
 
 #include <linux/dmaengine.h>
 #include <linux/device.h>
@@ -23,22 +19,16 @@
 #define DMA_DATA_LENGTH         0x10000000
 
 #define BUFF_DATA_ADDR          0x40000000
-#define BUFF_DATA_LENGTH        0x10000000
+#define BUFF_DATA_LENGTH        DMA_DATA_LENGTH
 
 static int gMajor; /* major number of device */
 static struct class *dma_tm_class;
-u32 *wbuf, *wbuf2, *wbuf3, *wbuf4;
-u32 *rbuf, *rbuf2, *rbuf3, *rbuf4;
+u32 *wbuf;
+u32 *rbuf;
 
 struct dma_chan *dma_m2m_chan;
 
 struct completion dma_m2m_ok;
-
-struct scatterlist sg[3], sg2[3];
-
-#define SDMA_BUF_SIZE  1024
-
-
 
 static bool dma_m2m_filter(struct dma_chan *chan, void *param)
 {
@@ -66,53 +56,16 @@ int sdma_open(struct inode * inode, struct file * filp)
 		return -EINVAL;
 	}
 
-/*	wbuf = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
-	if(!wbuf) {
-		printk("error wbuf !!!!!!!!!!!\n");
-		return -1;
-	}
+	request_mem_region(DMA_DATA_ADDR, DMA_DATA_LENGTH, "wbuf");
+	wbuf = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
+	memset((void*)wbuf , 'A' , DMA_DATA_LENGTH) ;
+	printk("ioremap wbuf succeed\n");
 
-	wbuf2 = kzalloc(SDMA_BUF_SIZE/2, GFP_DMA);
-	if(!wbuf2) {
-		printk("error wbuf2 !!!!!!!!!!!\n");
-		return -1;
-	}
+	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "rbuf");
+	rbuf = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
+	memset((void*)rbuf , 0 , BUFF_DATA_LENGTH) ;
+	printk("ioremap rbuf succeed\n");
 
-	wbuf3 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
-	if(!wbuf3) {
-		printk("error wbuf3 !!!!!!!!!!!\n");
-		return -1;
-	}
-
-	rbuf = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
-	if(!rbuf) {
-		printk("error rbuf !!!!!!!!!!!\n");
-		return -1;
-	}
-
-	rbuf2 = kzalloc(SDMA_BUF_SIZE/2, GFP_DMA);
-	if(!rbuf2) {
-		printk("error rbuf2 !!!!!!!!!!!\n");
-		return -1;
-	}
-
-	rbuf3 = kzalloc(SDMA_BUF_SIZE, GFP_DMA);
-	if(!rbuf3) {
-		printk("error rbuf3 !!!!!!!!!!!\n");
-		return -1;
-	}
-*/
-///////////////////////////////////////////////////////////
-	request_mem_region(DMA_DATA_ADDR, DMA_DATA_LENGTH, "wbuf4");
-	wbuf4 = (u32 *)ioremap(DMA_DATA_ADDR, DMA_DATA_LENGTH);
-	memset((void*)wbuf4 , 'A' , DMA_DATA_LENGTH) ;
-	printk("ioremap buff_data succeed\n");
-
-	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "rbuf4");
-	rbuf4 = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
-	memset((void*)rbuf4 , 0 , BUFF_DATA_LENGTH) ;
-
-///////////////////////////////////////////////////////////
 	return 0;
 }
 
@@ -120,14 +73,8 @@ int sdma_release(struct inode * inode, struct file * filp)
 {
 	dma_release_channel(dma_m2m_chan);
 	dma_m2m_chan = NULL;
-//	kfree(wbuf);
-//	kfree(wbuf2);
-//	kfree(wbuf3);
-	iounmap(wbuf4);
-//	kfree(rbuf);
-//	kfree(rbuf2);
-//	kfree(rbuf3);
-	iounmap(rbuf4);
+	iounmap(wbuf);
+	iounmap(rbuf);
 	return 0;
 }
 
@@ -136,37 +83,13 @@ ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 {
 	int i;
 
-/*	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
-		if (*(rbuf+i) != *(wbuf+i)) {
-			printk("buffer 1 copy falled!\n");
-			return 0;
-		}
-	}
-	printk("buffer 1 copy passed!\n");
-
-	for (i=0; i<SDMA_BUF_SIZE/2/4; i++) {
-		if (*(rbuf2+i) != *(wbuf2+i)) {
-			printk("buffer 2 copy falled!\n");
-			return 0;
-		}
-	}
-	printk("buffer 2 copy passed!\n");
-
-	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
-		if (*(rbuf3+i) != *(wbuf3+i)) {
-			printk("buffer 3 copy falled!\n");
-			return 0;
-		}
-	}
-	printk("buffer 3 copy passed!\n");
-*/
 	for (i=0; i<DMA_DATA_LENGTH/4; i++) {
-		if (*(rbuf4+i) != *(wbuf4+i)) {
-			printk("buffer 4 copy falled!,r=%x,w=%x,%d\n", *(rbuf4+i), *(wbuf4+i), i);
+		if (*(rbuf+i) != *(wbuf+i)) {
+			printk("buffer  copy falled!,r=%x,w=%x,%d\n", *(rbuf+i), *(wbuf+i), i);
 			return 0;
 		}
 	}
-	printk("buffer 4 copy passed!\n");
+	printk("buffer  copy passed!\n");
 
 	return 0;
 }
@@ -181,65 +104,22 @@ static void dma_m2m_callback(void *data)
 ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 								loff_t * offset)
 {
-	u32 *index1, *index2, *index3, i, ret;
 	struct dma_slave_config dma_m2m_config = {0};
 	struct dma_async_tx_descriptor *dma_m2m_desc;
-//	u32 *index4 = wbuf4;
-//	dma_addr_t dma_src, dma_dst;
 
-//	index1 = wbuf;
-//	index2 = wbuf2;
-//	index3 = wbuf3;
-
-/*	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
-		*(index1 + i) = 0x12121212;
-	}
-
-	for (i=0; i<SDMA_BUF_SIZE/2/4; i++) {
-		*(index2 + i) = 0x34343434;
-	}
-
-	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
-		*(index3 + i) = 0x56565656;
-	}
-
-	for (i=0; i<SDMA_BUF_SIZE/4; i++) {
-		*(index4 + i) = 0x56565656;
-	}
-*/
 	dma_m2m_config.direction = DMA_MEM_TO_MEM;
 	dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	dmaengine_slave_config(dma_m2m_chan, &dma_m2m_config);
 
-/*	sg_init_table(sg, 3);
-	sg_set_buf(&sg[0], wbuf, SDMA_BUF_SIZE);
-	sg_set_buf(&sg[1], wbuf2, SDMA_BUF_SIZE/2);
-	sg_set_buf(&sg[2], wbuf3, SDMA_BUF_SIZE);
-	ret = dma_map_sg(NULL, sg, 3, dma_m2m_config.direction);
-
-	sg_init_table(sg2, 3);
-	sg_set_buf(&sg2[0], rbuf, SDMA_BUF_SIZE);
-	sg_set_buf(&sg2[1], rbuf2, SDMA_BUF_SIZE/2);
-	sg_set_buf(&sg2[2], rbuf3, SDMA_BUF_SIZE);
-	ret = dma_map_sg(NULL, sg2, 3, dma_m2m_config.direction);
-
-	dma_m2m_desc = dma_m2m_chan->device->device_prep_dma_sg(dma_m2m_chan,sg2, 3, sg, 3, 0);
-
-	dma_m2m_desc->callback = dma_m2m_callback;
-	dmaengine_submit(dma_m2m_desc);
-	dma_async_issue_pending(dma_m2m_chan);
-
-	wait_for_completion(&dma_m2m_ok);
-	dma_unmap_sg(NULL, sg, 3, dma_m2m_config.direction);
-	dma_unmap_sg(NULL, sg2, 3, dma_m2m_config.direction);
-*/
 	dma_m2m_desc = dma_m2m_chan->device->device_prep_dma_memcpy(dma_m2m_chan, BUFF_DATA_ADDR, DMA_DATA_ADDR, DMA_DATA_LENGTH,0);
 	if (!dma_m2m_desc)
 		printk("prep error!!\n");
 	dma_m2m_desc->callback = dma_m2m_callback;
 	dmaengine_submit(dma_m2m_desc);
 	dma_async_issue_pending(dma_m2m_chan);
+	printk ("transfer start ... \n");
 	wait_for_completion(&dma_m2m_ok);
+	printk ("transfer finish ... \n");
 
 	return 0;
 }
@@ -253,11 +133,7 @@ struct file_operations dma_fops = {
 
 int __init sdma_init_module(void)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
-	struct device *temp_class;
-#else
 	struct class_device *temp_class;
-#endif
 	int error;
 
 	/* register a character device */
@@ -276,17 +152,8 @@ int __init sdma_init_module(void)
 		return PTR_ERR(dma_tm_class);
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 	temp_class = device_create(dma_tm_class, NULL,
 				   MKDEV(gMajor, 0), NULL, "sdma_test");
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
-	temp_class = device_create(dma_tm_class, NULL,
-				   MKDEV(gMajor, 0), "sdma_test");
-#else
-	temp_class = class_device_create(dma_tm_class, NULL,
-					     MKDEV(gMajor, 0), NULL,
-					     "sdma_test");
-#endif
 	if (IS_ERR(temp_class)) {
 		printk(KERN_ERR "Error creating sdma test class device.\n");
 		class_destroy(dma_tm_class);
@@ -301,11 +168,7 @@ int __init sdma_init_module(void)
 static void sdma_cleanup_module(void)
 {
 	unregister_chrdev(gMajor, "sdma_test");
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
 	device_destroy(dma_tm_class, MKDEV(gMajor, 0));
-#else
-	class_device_destroy(dma_tm_class, MKDEV(gMajor, 0));
-#endif
 	class_destroy(dma_tm_class);
 
 	printk("SDMA test Driver Module Unloaded\n");
@@ -315,6 +178,5 @@ static void sdma_cleanup_module(void)
 module_init(sdma_init_module);
 module_exit(sdma_cleanup_module);
 
-MODULE_AUTHOR("Freescale Semiconductor");
 MODULE_DESCRIPTION("SDMA test driver");
 MODULE_LICENSE("GPL");
