@@ -65,7 +65,10 @@ int sdma_open(struct inode * inode, struct file * filp)
 	rbuf = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
 	memset((void*)rbuf , 0 , BUFF_DATA_LENGTH) ;
 	printk("ioremap rbuf succeed\n");
-
+	
+	printk ("wbuf = 0x%x --> rbuf = 0x%x \n", *wbuf, *rbuf);
+	printk ("init memory is over . \n");
+	
 	return 0;
 }
 
@@ -83,13 +86,13 @@ ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 {
 	int i;
 
-	for (i=0; i<DMA_DATA_LENGTH/4; i++) {
+	for (i=0; i<DMA_DATA_LENGTH/4; ++i) {
 		if (*(rbuf+i) != *(wbuf+i)) {
-			printk("buffer  copy falled!,r=%x,w=%x,%d\n", *(rbuf+i), *(wbuf+i), i);
+			printk("buffer  copy failed!,r=%x,w=%x,%d\n", *(rbuf+i), *(wbuf+i), i);
 			return 0;
 		}
 	}
-	printk("buffer  copy passed!\n");
+	printk("buffer copy passed!\n");
 
 	return 0;
 }
@@ -117,6 +120,7 @@ ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 	dma_m2m_desc->callback = dma_m2m_callback;
 	dmaengine_submit(dma_m2m_desc);
 	dma_async_issue_pending(dma_m2m_chan);
+
 	printk ("transfer start ... \n");
 	wait_for_completion(&dma_m2m_ok);
 	printk ("transfer finish ... \n");
@@ -133,7 +137,11 @@ struct file_operations dma_fops = {
 
 int __init sdma_init_module(void)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+	struct device *temp_class;
+#else
 	struct class_device *temp_class;
+#endif
 	int error;
 
 	/* register a character device */
@@ -152,8 +160,17 @@ int __init sdma_init_module(void)
 		return PTR_ERR(dma_tm_class);
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 	temp_class = device_create(dma_tm_class, NULL,
 				   MKDEV(gMajor, 0), NULL, "sdma_test");
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+	temp_class = device_create(dma_tm_class, NULL,
+				   MKDEV(gMajor, 0), "sdma_test");
+#else
+	temp_class = class_device_create(dma_tm_class, NULL,
+					     MKDEV(gMajor, 0), NULL,
+					     "sdma_test");
+#endif
 	if (IS_ERR(temp_class)) {
 		printk(KERN_ERR "Error creating sdma test class device.\n");
 		class_destroy(dma_tm_class);
