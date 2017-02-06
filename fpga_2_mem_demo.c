@@ -61,7 +61,7 @@ int sdma_open(struct inode * inode, struct file * filp)
 
 	request_mem_region(BUFF_DATA_ADDR, BUFF_DATA_LENGTH, "rbuf");
 	rbuf = (u32 *)ioremap(BUFF_DATA_ADDR, BUFF_DATA_LENGTH);
-	memset((void*)rbuf , 0 , BUFF_DATA_LENGTH) ;
+	memset((void*)rbuf , 'A', BUFF_DATA_LENGTH) ;
 	printk("ioremap rbuf succeed\n");
 	
 	printk ("wbuf = 0x%x --> rbuf = 0x%x \n", *wbuf, *rbuf);
@@ -87,6 +87,7 @@ ssize_t sdma_read (struct file *filp, char __user * buf, size_t count,
 	for (i=0; i<BUFF_DATA_LENGTH/4; ++i) {
 		if (*(rbuf+i) != *(wbuf+i)) {
 			printk("buffer  copy failed!,r=%x,w=%x,%d\n", *(rbuf+i), *(wbuf+i), i);
+			printk("wbuf + %x*4 = %p  rbuf + %x*4 = %p \n",i,wbuf+i*4, i, rbuf+i*4);
 			return 0;
 		}
 	}
@@ -112,7 +113,7 @@ ssize_t sdma_write(struct file * filp, const char __user * buf, size_t count,
 	dma_f2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	dmaengine_slave_config(dma_f2m_chan, &dma_f2m_config);
 
-	dma_f2m_desc = dma_f2m_chan->device->device_prep_dma_memcpy(dma_f2m_chan, BUFF_DATA_ADDR, DATA_SOURCE_ADDR, BUFF_DATA_LENGTH,0);
+	dma_f2m_desc = dma_f2m_chan->device->device_prep_dma_memcpy(dma_f2m_chan, BUFF_DATA_ADDR, DATA_SOURCE_ADDR, BUFF_DATA_LENGTH, 0);
 	if (!dma_f2m_desc)
 		printk("prep error!!\n");
 	dma_f2m_desc->callback = dma_f2m_callback;
