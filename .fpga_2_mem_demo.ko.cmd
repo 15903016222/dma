@@ -1,1 +1,0 @@
-cmd_/home/ws/project/dma/fpga_2_mem_demo.ko := arm-phytec-linux-gnueabi-ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/ws/project/dma/fpga_2_mem_demo.ko /home/ws/project/dma/fpga_2_mem_demo.o /home/ws/project/dma/fpga_2_mem_demo.mod.o
