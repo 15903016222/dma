@@ -1,5 +1,6 @@
 # obj-m +=mxc_sdma_memcopy_test.o
-obj-m +=fpga_2_mem_demo.o
+# obj-m +=fpga_2_mem_demo.o
+obj-m +=register_modu.o
 all:
 	make -C /home/ws/kernel/linux-4.x SUBDIRS=$(PWD) modules
 clean:
