@@ -72,7 +72,7 @@ int __init register_init_module(void)
 	gMajor = error;
 	printk("register test major number = %d\n",gMajor);
 
-	dma_tm_class = class_create(THIS_MODULE, "ein_test");
+	dma_tm_class = class_create(THIS_MODULE, "register_test");
 	if (IS_ERR(dma_tm_class)) {
 		printk(KERN_ERR "Error creating register test module class.\n");
 		unregister_chrdev(gMajor, "register_test");
