@@ -21,31 +21,26 @@
 
 
 int test() {
-  char buf[48];
-  int fd;
+	char buf[48];
+	int fd;
 
-  fd = open("/dev/eim_test",O_RDWR);
-
-
-  if(fd < 0){
-    printf("Failed open\n");
-    exit(-1);
-  }
+	fd = open("/dev/eim_test",O_RDWR);
 
 
-  write(fd, buf, 0);
+	if(fd < 0){
+		printf("Failed open\n");
+		exit(-1);
+	}
 
-  sleep(1);
+	read(fd, buf, 0);
 
-
-  read(fd, buf, 0);
-
-  close(fd);
-  return 0;
+	close(fd);
+	return 0;
 }
 
 int main(int argc,char **argv) {
-  test();
 
-  return 0;
+	test();
+
+	return 0;
 }
