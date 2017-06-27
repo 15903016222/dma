@@ -4,6 +4,26 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+unsigned int convert (char *str) {
+    unsigned int i,num = 0;
+
+    if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+        for(i = 0;str[i] != '\0';i++) {
+            if(str[i]>='0' && str[i]<='9')
+             num = num*16 + str[i]-'0';
+           else if(str[i]<='f' && str[i]>='a')
+                num = num*16 + str[i]-'a' + 10; 
+            else if(str[i]<='F' && str[i]>='A')
+                num = num*16 + str[i]-'A' + 10; 
+        }
+    }   
+    else {
+        num = atoi (str);
+    }   
+
+    return num;
+}
+
 int main(int argc, char *argv[])
 {
     int fd;
@@ -11,8 +31,8 @@ int main(int argc, char *argv[])
 
     unsigned int *data_addr;
 
-    if(argc != 2) {
-        printf("Usage: %s <on|off>\n", argv[0]);
+    if(argc < 3) {
+        printf("Usage: %s <start_addr> <length>\n", argv[0]);
         return -1;
     }
 
@@ -22,8 +42,9 @@ int main(int argc, char *argv[])
 
     data_addr = (unsigned int *)mmap(0, 0x01000000, PROT_READ|PROT_WRITE,
                     MAP_SHARED, fd, 0);
-	for (i = 0; i < 0x01000000 / 4; ++i) {
-		printf ("%08X ", *(unsigned int *)(data_addr + i));
+
+	for (i = 0; i < (convert (argv[2])) / 4; ++i) {
+		printf ("%08X ", *(unsigned int *)(data_addr + (convert (argv[1]) - 0x2f000000) / 4 + i));
 		if (i % 8 == 7) {
 			printf ("\n");
 		}
