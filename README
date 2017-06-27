@@ -1,6 +1,19 @@
-mxc_sdma_memcopy_test.c 飞思卡尔官方测试SDMA例程，驱动示例，需要编译成.ko文件
-mem_2_mem_demo.c 预留内存与预留内存之间的数据传输例程，驱动示例，需要编译成.ko文件。
-mxc_test.c 测试驱动示例的应用程序，编译成可执行文件。
+dma.c                针对Phascan-II仪器的DMA的传输的简单模型
+one_register_modu.c  \ 单个寄存器的查看/设置 驱动文件
+one_register.c       / 寄存器读取/设置的 测试文件 
+					   寄存器查看用法: ./one_register read reg_addr
+                       寄存器设置用法: ./one_register write reg_addr reg_value
+                                                       
+set.sh               EIM中的几个管脚需要设置为ALT0模式，即EIM复用功能
+DmaDoppler-II.c      针对Phascan-II的DMA驱动文件
+
+mmap_data_drv.c      \ DMA DATA缓冲区的的驱动文件
+mmap_data_test.c     / DMA DATA缓冲区数据的查看 测试文件
+					 用法: ./mmap_data_test /dev/dma_data 
+
+mmap_buffer_drv.c    \ STORE BUFFER 存储区的驱动文件
+mmap_buffer_test.c   / STORE BUFFER 存储区数据的查看文件 测试文件
+					 用法: ./mmap_buffer.test /dev/dma_buffer 
 
 SDMA传输的驱动编程步骤：
      过程                  接口
