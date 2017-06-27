@@ -15,6 +15,10 @@ mmap_buffer_drv.c    \ STORE BUFFER 存储区的驱动文件
 mmap_buffer_test.c   / STORE BUFFER 存储区数据的查看文件 测试文件
 					 用法: ./mmap_buffer.test /dev/dma_buffer 
 
+ARM与FPGA数据通讯，ARM在中断中读取FPGA数据，触发传输数据的中断是FPGA通过GPIO7_13
+管脚上升沿触发中断，开始一次DMA传输数据，FPGA不断的触发中断，就会不断的从FPGA获
+取数据。
+
 SDMA传输的驱动编程步骤：
      过程                  接口
 1. 申请通道         dma_request_channel()      
