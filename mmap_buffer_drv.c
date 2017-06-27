@@ -12,8 +12,8 @@ static int dma_data_mmap(struct file *file,
     
     remap_pfn_range(vma, 
                     vma->vm_start,
-                    0x40000000>>12,
-                    0x00020000 * 0x800, 
+                    0x30000000>>12,
+                    0x20000000, 
                     vma->vm_page_prot 
                     );
     return 0;
