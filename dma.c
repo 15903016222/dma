@@ -36,7 +36,7 @@
 
 #define DMA_SOURCE_ADDR          0x08000000
 
-#define DMA_START_ADDR           0x30000000 
+#define DMA_START_ADDR           0x2f000000 
 #define DMA_DATA_LENGTH          0x00020000 
 
 #define BUFF_START_ADDR          0x40000000

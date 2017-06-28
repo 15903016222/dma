@@ -7,13 +7,11 @@ one_register.c       / 寄存器读取/设置的 测试文件
 set.sh               EIM中的几个管脚需要设置为ALT0模式，即EIM复用功能
 DmaDoppler-II.c      针对Phascan-II的DMA驱动文件
 
-mmap_data_drv.c      \ DMA DATA缓冲区的的驱动文件
-mmap_data_test.c     / DMA DATA缓冲区数据的查看 测试文件
-					 用法: ./mmap_data_test <start_address> <size>
+dmaDataDrv.c         dmaData缓冲区的的驱动文件
+storeBufferDrv.c     storeBuffer存储区的驱动文件
+dma_test.c           sdmaData缓冲区/toreBuffer存储区 数据的查看 测试文件
+					 用法: ./dma_test </dev/dma_data|/dev/dma_buffer> <start_address> <size>
 
-mmap_buffer_drv.c    \ STORE BUFFER 存储区的驱动文件
-mmap_buffer_test.c   / STORE BUFFER 存储区数据的查看文件 测试文件
-					 用法: ./mmap_buffer.test <start_address> <size> 
 
 ARM与FPGA数据通讯，ARM在中断中读取FPGA数据，触发传输数据的中断是FPGA通过GPIO7_13
 管脚上升沿触发中断，开始一次DMA传输数据，FPGA不断的触发中断，就会不断的从FPGA获
