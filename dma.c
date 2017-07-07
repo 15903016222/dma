@@ -39,7 +39,7 @@
 #define DMA_START_ADDR           0x2f000000 
 #define DMA_DATA_LENGTH          0x00020000 
 
-#define BUFF_START_ADDR          0x40000000
+#define BUFF_START_ADDR          0x30000000
 #define BUFF_DATA_LENGTH         0x00020000
 
 struct thread_data {
@@ -101,7 +101,7 @@ static void dma_to_store_buffer(void)
     struct dma_transfer* dma = &dma_buffer ;
 
     dma->phys_from   =  DMA_START_ADDR + (cnt % 4) * 0x00020000  ;
-    dma->phys_to     =  BUFF_START_ADDR + (cnt % 0x800) * 0x00020000 ;
+    dma->phys_to     =  BUFF_START_ADDR + (cnt % 0x1000) * 0x00020000 ;
 
     dma->dma_m2m_config.direction = DMA_MEM_TO_MEM;
     dma->dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
@@ -144,12 +144,21 @@ static int dma_mem_transfer_to_store_buffer(void)
  */
 static void dma_memcpy_callback_from_fpga(void *data)
 {
-//	printk ("%s [%d] \n", __func__, __LINE__);
-//	printk ("*data_addr = 0x%X \n", *(unsigned int *)data_addr);
-//	printk ("*data_addr + 0x%08X = 0x%08X \n", BUFF_DATA_LENGTH / 2 - 4, *(unsigned int *)(data_addr + BUFF_DATA_LENGTH / 2 - 4));
-//	printk ("*data_addr + 0x%08X = 0x%08X \n", BUFF_DATA_LENGTH - 4, *(unsigned int *)(data_addr + BUFF_DATA_LENGTH - 4));
+    struct dma_transfer* dma = &dma_data ;
 
     dma_to_store_buffer() ;
+
+	dma->phys_from	= DMA_SOURCE_ADDR;
+    dma->phys_to	= DMA_START_ADDR + (cnt % 4) * 0x00020000;
+
+    dma_data.dma_m2m_config.direction = DMA_MEM_TO_MEM;
+    dma_data.dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+    dmaengine_slave_config(dma_data.ch, &dma_data.dma_m2m_config);
+    dma_data.dma_m2m_desc = dma_data.ch->device->device_prep_dma_memcpy(dma_data.ch,
+                                        dma_data.phys_to, dma_data.phys_from,
+                                        0x00020000, 0);
+    dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
+    dmaengine_submit(dma_data.dma_m2m_desc);
 	
     return ;
 }
@@ -174,19 +183,7 @@ static int dma_mem_transfer_from_fpga (void)
         return -ENOMEM;
     }
 
-    return 0;
-}
-
-static irqreturn_t dma_start (int irq, void *dev_id)
-{
-    struct dma_transfer* dma = &dma_data ;
-	
-	if (flag == 0) {
-		printk ("irq is working ... \n");
-		flag = 1;
-	}
-
-    dma->phys_from	= DMA_SOURCE_ADDR;
+	dma->phys_from	= DMA_SOURCE_ADDR;
     dma->phys_to	= DMA_START_ADDR + (cnt % 4) * 0x00020000;
 
     dma_data.dma_m2m_config.direction = DMA_MEM_TO_MEM;
@@ -197,8 +194,19 @@ static irqreturn_t dma_start (int irq, void *dev_id)
                                         0x00020000, 0);
     dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma_data.dma_m2m_desc);
+
+    return 0;
+}
+
+static irqreturn_t dma_start (int irq, void *dev_id)
+{
+	if (flag == 0) {
+		printk ("irq is working ... \n");
+		flag = 1;
+	}
+
     dma_async_issue_pending (dma_data.ch);
-	
+
 	return IRQ_HANDLED;
 }
 
@@ -247,8 +255,8 @@ static int __init dmatest_init(void)
 	memset ((void *)data_addr, 0, DMA_DATA_LENGTH * 5);
 
     request_mem_region(BUFF_START_ADDR, BUFF_DATA_LENGTH , "buffer_data");
-    buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH * 0x800);
-	memset ((void *)buff_addr, 0, DMA_DATA_LENGTH * 0x800);
+    buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH * 0x1000);
+	memset ((void *)buff_addr, 0, DMA_DATA_LENGTH * 0x1000);
 
     printk("<0>dma module is running !\n");
     return 0;
