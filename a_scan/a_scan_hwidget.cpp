@@ -10,10 +10,6 @@
 #include <QThread>
 #include <QTime>
 
-static int flag = 0;
-struct timeval start_tv;
-struct timeval end_tv;
-
 AscanHWidget::AscanHWidget(QWidget *parent) :
     AscanWidget(parent)
 {
@@ -73,15 +69,5 @@ void AscanHWidget::paintEvent(QPaintEvent *e)
 
 void AscanHWidget::recive_data(QByteArray waveData)
 {
-	if (0 == flag) {
-		if (gettimeofday(&start_tv, NULL) == 0) {
-			flag = 1;
-		}
-	} else {
-		if (gettimeofday(&end_tv, NULL) == 0) {
-			printf ("interval time : end - start = %d \n", end_tv.tv_usec - start_tv.tv_usec);
-		}
-		flag = 0;
-	}
     this->AscanWidget::show(waveData);
 }
