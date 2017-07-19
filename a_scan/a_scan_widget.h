@@ -8,6 +8,7 @@
 #define __A_SCAN_WIDGET_H__
 
 #include <QWidget>
+#include <sys/time.h>
 
 class AscanWidget : public QWidget
 {

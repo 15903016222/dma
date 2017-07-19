@@ -10,16 +10,21 @@
 #include <QThread>
 #include <QTime>
 
+struct timeval start_tv;
+struct timeval end_tv;
+
 AscanHWidget::AscanHWidget(QWidget *parent) :
     AscanWidget(parent)
 {
-    setFixedSize(800, 600);
+    setFixedSize(800, 800);
     setWindowTitle("ASCAN");
     setAutoFillBackground(true);
 
     QPalette palette;
     palette.setColor(QPalette::Background, QColor(0, 0, 0));
     setPalette(palette);
+
+	qDebug ("width = %d, height = %d ", width(), height());
 
     m_draw_thread = new MyThread;
     connect(m_draw_thread, SIGNAL(draw_data(QByteArray)),
@@ -62,9 +67,13 @@ void AscanHWidget::paintEvent(QPaintEvent *e)
 
     painter.setPen( wave_color() );
     painter.drawPath( paint_wave() );
+
+	gettimeofday(&end_tv, NULL);
+	printf ("draw : end - start = %d \n", end_tv.tv_usec - start_tv.tv_usec);
 }
 
 void AscanHWidget::recive_data(QByteArray waveData)
 {
+	gettimeofday(&start_tv, NULL);
     this->AscanWidget::show(waveData);
 }
