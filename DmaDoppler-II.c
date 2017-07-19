@@ -89,7 +89,10 @@ volatile int* config;            // config[0]  DRAW condition
 // config[9]  Scan Timer counter
 // config[10] whether the data counter is circled in 256M memory
 
-
+// Test irq interval
+static int timeFlag = 0;
+struct timeval start_tv;
+struct timeval end_tv;
 
 int OFFSET   ;
 int OFFSET_ADDR[4] = {
@@ -317,6 +320,15 @@ static int dma_mem_transfer_from_fpga (void)
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
+	
+	if ( 0 == timeFlag) {
+		timeFlag = 1;
+		do_gettimeofday (&start_tv);
+	} else {
+		timeFlag = 0;
+		do_gettimeofday (&end_tv);
+		printk ("end - start = %d \n", end_tv.tv_usec - start_tv.tv_usec);
+	}
 
     dma_async_issue_pending (dma->ch);
 
