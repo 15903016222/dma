@@ -89,9 +89,14 @@ volatile int* config;            // config[0]  DRAW condition
 // config[9]  Scan Timer counter
 // config[10] whether the data counter is circled in 256M memory
 
-// Test irq interval
-static int timeFlag = 0;
+// Test time
+// ns
+struct timespec start_ts;
+struct timespec mid_ts;
+struct timespec end_ts;
+// us
 struct timeval start_tv;
+struct timeval mid_tv;
 struct timeval end_tv;
 
 int OFFSET   ;
@@ -250,6 +255,10 @@ static int dma_mem_transfer_to_store_buffer(void)
  */
 static void dma_memcpy_callback_from_fpga(void *data)
 {
+	// Test middle time
+	do_gettimeofday (&mid_tv);
+	getnstimeofday (&mid_ts);
+
     DmaFrameBuffer = 0xfffffff ;
 
     dma_to_store_buffer() ;
@@ -271,7 +280,16 @@ static void dma_memcpy_callback_from_fpga(void *data)
                                         dma_data.data_type * dma_data.frame_size * dma_data.frame_count,0);
     dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma_data.dma_m2m_desc);
-    
+    // Test end time 
+	do_gettimeofday (&end_tv);
+	getnstimeofday (&end_ts);
+	printk ("us : \n");
+	printk ("mid - start = %ld \n", mid_tv.tv_usec - start_tv.tv_usec);
+	printk ("end - start = %ld \n", end_tv.tv_usec - start_tv.tv_usec);
+	printk ("ns: \n");	
+	printk ("mid - start = %ld \n", mid_ts.tv_nsec - start_ts.tv_nsec);
+	printk ("end - start = %ld \n", end_ts.tv_nsec - start_ts.tv_nsec);
+
     return ;
 }
 
@@ -312,7 +330,7 @@ static int dma_mem_transfer_from_fpga (void)
                                         dma->phys_to, dma->phys_from,
                                         dma->data_type * dma->frame_size * dma->frame_count,0);
     dma->dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
-    dmaengine_submit(dma->dma_m2m_desc);
+    dmaengine_submit(dma->dma_m2m_desc); 
 
     return 0;
 }
@@ -320,15 +338,9 @@ static int dma_mem_transfer_from_fpga (void)
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
-	
-	if ( 0 == timeFlag) {
-		timeFlag = 1;
-		do_gettimeofday (&start_tv);
-	} else {
-		timeFlag = 0;
-		do_gettimeofday (&end_tv);
-		printk ("end - start = %d \n", end_tv.tv_usec - start_tv.tv_usec);
-	}
+	// Test start time	
+	do_gettimeofday (&start_tv);
+	getnstimeofday (&start_ts);
 
     dma_async_issue_pending (dma->ch);
 
