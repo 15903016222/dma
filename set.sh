@@ -16,7 +16,7 @@ insmod storeBufferDrv.ko
 
 ./one_register write 0x21b8000 0x00010089
 # ./one_register write 0x21b8004 0x00001001
-./one_register write 0x21b8008 0x10020000
+./one_register write 0x21b8008 0x0c020000
 # ./one_register write 0x21b800c 0x00000300
 
 insmod DmaDoppler-II.ko

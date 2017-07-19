@@ -57,7 +57,7 @@ void MyThread::draw_a_scan()
         emit draw_data(data);
         pthread_mutex_unlock(&draw_thread_mutex);
 		index ++;
-		if (512 <= index) {
+		if (128 * 1024 - 512 <= index) {
 			index = 0;
 		}
     }
