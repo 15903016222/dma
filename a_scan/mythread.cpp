@@ -66,6 +66,7 @@ void MyThread::draw_a_scan()
 void MyThread::run()
 {
     ((int *)m_dma_mark)[4] = 128;
+    ((int *)m_dma_mark)[8] = 4096;
 
     while (1) {
         draw_a_scan();
