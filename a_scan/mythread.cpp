@@ -69,7 +69,7 @@ void MyThread::run()
 
     while (1) {
         draw_a_scan();
-        usleep(10);
+        usleep(1000);
     }
 }
 
