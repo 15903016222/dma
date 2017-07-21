@@ -8,9 +8,9 @@
 #define __A_SCAN_HWIDGET_H__
 
 #include "a_scan_widget.h"
-#include "mythread.h"
 #include <QTimer>
 
+class MyThread;
 class AscanHWidget : public AscanWidget
 {
     Q_OBJECT

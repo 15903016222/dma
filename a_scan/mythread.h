@@ -1,9 +1,12 @@
 #ifndef __MYTHREAD_H__
 #define __MYTHREAD_H__
 
+#include "dma.h"
 #include <pthread.h>
 #include <QThread>
 #include <QTimer>
+
+using namespace DplSource;
 
 class MyThread : public QThread
 {
@@ -13,8 +16,10 @@ public:
     ~MyThread();
 
 public:
-    void set_flag(bool flag){m_flag = flag;}
     void draw_a_scan();
+    void set_flag (bool flag) {
+        m_flag = flag;
+    }
 
 signals:
     void draw_data(QByteArray drawData);
@@ -22,15 +27,9 @@ signals:
 protected:
     void run();
 
-private:
+public:
+    Dma *m_dma;
     bool m_flag;
-    int  m_fd;
-    unsigned int m_dma_mark;
-    unsigned int m_dma_data;
-    unsigned int m_store_buffer;
-    unsigned int m_beam_data;
-
-    pthread_mutex_t draw_thread_mutex  ;
 };
 
 #endif // MYTHREAD_H

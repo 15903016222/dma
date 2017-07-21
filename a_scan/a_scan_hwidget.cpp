@@ -5,6 +5,7 @@
  * @date 2017-06-28
  */
 #include "a_scan_hwidget.h"
+#include "mythread.h"
 #include <QDebug>
 #include <QPainter>
 #include <QThread>
@@ -13,7 +14,7 @@
 AscanHWidget::AscanHWidget(QWidget *parent) :
     AscanWidget(parent)
 {
-    setFixedSize(800, 800);
+    setFixedSize(800, 600);
     setWindowTitle("ASCAN");
     setAutoFillBackground(true);
 

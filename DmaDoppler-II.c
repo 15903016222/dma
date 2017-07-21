@@ -35,7 +35,7 @@
 
 #define GPIO_IRQ(bank, nr)     (gpio_to_irq (IMX_GPIO_NR((bank), (nr))))
 
-#define VERSION "20170327"
+#define VERSION "20170720"
 
 #define	FB_FRAME_SIZE	  768
 #define DATA_FRAME_SIZE  1024
@@ -54,11 +54,11 @@
 #define BUFF_START_ADDR          0x30000000
 #define BUFF_DATA_LENGTH         0x20000000
 
-#define CONFIG_START_ADDR_OFFSET 0x00100000
-#define SCAN_DATA_MARK_OFFSET    0x00200000
+#define CONFIG_START_ADDR_OFFSET 0x00400000     // 4M
+#define SCAN_DATA_MARK_OFFSET    0x00500000     // 5M
 #define CONFIG_DATA_LENGTH       0x00000100
 
-#define REGION_SIZE              0x00040000     // 256K
+#define REGION_SIZE              0x00100000     // 1M
 #define DATA_SAVE_BLOCK_SIZE_BIT     1024
 #define DATA_SAVE_BLOCK_SIZE_WORD     512
 
@@ -375,7 +375,7 @@ static int __init dmatest_init(void)
 
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
-    memset((void*)data_addr , 0 , 0x100100) ;
+    memset((void*)data_addr , 0 , CONFIG_START_ADDR_OFFSET + CONFIG_DATA_LENGTH) ;
 
     request_mem_region(BUFF_START_ADDR, BUFF_DATA_LENGTH , "buffer_data");
     buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH );
