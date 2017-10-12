@@ -344,10 +344,10 @@ static int   dmatest_work (void *data)
     // DMA data to store buffer
     dma_mem_transfer_to_store_buffer() ;
 
-	gpio_request (IMX_GPIO_NR (7, 13), "GPIO_18");
-	gpio_direction_input (IMX_GPIO_NR (7, 13));
+	gpio_request (IMX_GPIO_NR (7, 11), "GPIO_16");
+	gpio_direction_input (IMX_GPIO_NR (7, 11));
 
-	ret = request_irq (GPIO_IRQ (7, 13), dma_start,
+	ret = request_irq (GPIO_IRQ (7, 11), dma_start,
 						IRQF_TRIGGER_FALLING, "dma_irq", NULL);
 	if (ret) {
 		printk ("request_irq failed \n");
