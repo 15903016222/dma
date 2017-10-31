@@ -228,7 +228,7 @@ static int dma_mem_transfer_to_store_buffer(void)
     dma->phys_from   =  DMA_START_ADDR   ;
     dma->phys_to     =  BUFF_START_ADDR  ;
     
-    dma->data_type   = 0x01;
+    dma->data_type   = 0x02;
 
     dma->status      = 0;
 
@@ -288,7 +288,7 @@ static int dma_mem_transfer_from_fpga (void)
     dma->phys_from	= DMA_SOURCE_ADDR;
     dma->phys_to	= DMA_START_ADDR ;
     
-    dma->data_type = 0x01;
+    dma->data_type = 0x02;
 
     dma->status = 0;
 
