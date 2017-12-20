@@ -30,10 +30,14 @@ struct cmd_data data;
 ssize_t register_read (struct file *filp, char __user * buf, size_t count,
 								loff_t * offset)
 {
-	copy_from_user (&data, buf, sizeof (struct cmd_data));
+	if (copy_from_user (&data, buf, sizeof (struct cmd_data))) {
+		return EFAULT;
+	}
 	rbuf = (unsigned int *)ioremap(data.m_addr, 4);
 	data.m_data = *rbuf;
-	copy_to_user (buf, &data, sizeof (struct cmd_data));
+	if (copy_to_user (buf, &data, sizeof (struct cmd_data))) {
+		return EFAULT;
+	}
 	iounmap(rbuf);
 	return 0;
 }
@@ -41,7 +45,9 @@ ssize_t register_read (struct file *filp, char __user * buf, size_t count,
 ssize_t register_write(struct file * filp, const char __user * buf, size_t count,
 								loff_t * offset)
 {
-	copy_from_user (&data, buf, sizeof (struct cmd_data));
+	if (copy_from_user (&data, buf, sizeof (struct cmd_data))) {
+		return EFAULT;
+	}
 	wbuf = (unsigned int *)ioremap(data.m_addr, 4);
 	*wbuf = data.m_data;
 	iounmap(wbuf);
