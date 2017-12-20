@@ -56,7 +56,7 @@ int read_test(struct cmd_data *data) {
 
 	close(fd);
 
-	printf ("read register : reg[0x%08x]   -->   val[0x%08x] \n", data->m_addr, data->m_data);
+	printf ("read register : reg[0x%08X]   -->   val[0x%08X] \n", data->m_addr, data->m_data);
 	return 0;
 }
 
@@ -79,6 +79,12 @@ int write_test(struct cmd_data *data) {
 int main(int argc,char **argv) {
 
 	struct cmd_data data;
+
+	if (3 > argc) {
+		printf ("Usage : %s <read | write> <address> ...\n", argv[0]);
+		return 0;
+	}
+
 	if (3 == argc) {
 		if (!strcmp (argv[1], "read")) {
 			data.m_addr = convert (argv[2]);
