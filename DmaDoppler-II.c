@@ -31,8 +31,13 @@
 
 #include <linux/workqueue.h> //
 
-#define IMX_GPIO_NR(bank, nr)  (((bank) - 1) * 32 + (nr))
+#include <net/netlink.h>
+#include <net/sock.h>
 
+#define NETLINK_TEST (25)
+#define NLMSG_PID    (100)
+
+#define IMX_GPIO_NR(bank, nr)  (((bank) - 1) * 32 + (nr))
 #define GPIO_IRQ(bank, nr)     (gpio_to_irq (IMX_GPIO_NR((bank), (nr))))
 
 #define VERSION "20170327"
@@ -62,8 +67,6 @@
 #define DATA_SAVE_BLOCK_SIZE_BIT     1024
 #define DATA_SAVE_BLOCK_SIZE_WORD     512
 
-
-
 #define DmaFrameBuffer         config[0]
 #define DataDmaCounter         config[1]
 #define BufferInUse            config[2]
@@ -75,6 +78,9 @@
 #define MaxStoreIndex          config[8]
 #define ScanTimmerCounter      config[9]
 #define ScanTimmerCircled      config[10] 
+
+struct sock *nl_sk = NULL;
+struct completion cmpl;
 
 volatile unsigned char* scan_mark  ;
 volatile int* config;            // config[0]  DRAW condition
@@ -124,6 +130,8 @@ struct dma_transfer {
 static int  dmatest_work(void *data);
 static void dma_memcpy_callback_from_fpga(void *data);
 static int  dma_mem_transfer_to_store_buffer(void) ;
+
+static void netlink_send(void);
 
 static unsigned int  data_addr ;
 static unsigned int  buff_addr ;
@@ -327,6 +335,13 @@ static int   dmatest_work (void *data)
 {
 	int ret;
 
+    int i = 20;
+    init_completion (&cmpl);
+
+    while (i--) {
+        netlink_send ();
+    }
+
     allow_signal(SIGTERM);
     current->state = TASK_INTERRUPTIBLE;
     do{
@@ -356,11 +371,66 @@ static int   dmatest_work (void *data)
     return 0;
 }
 
+static void netlink_send(void)
+{
+    struct sk_buff *skb_1;
+    struct nlmsghdr *nlh;
+
+    printk ("waiting ... \n");
+    wait_for_completion (&cmpl);
+    init_completion (&cmpl);
+
+    if (!nl_sk) {
+        return;
+    }
+    skb_1 = alloc_skb(NLMSG_SPACE(0), GFP_KERNEL);
+    if (!skb_1) {
+        printk(KERN_ERR "alloc_skb error!\n");
+        return ;
+    }
+    nlh = nlmsg_put(skb_1, 0, 0, 0, 0, 0);
+    NETLINK_CB(skb_1).portid = 0;
+    NETLINK_CB(skb_1).dst_group = 0;
+    memcpy(NLMSG_DATA(nlh), "", 0);
+
+    netlink_unicast(nl_sk, skb_1, NLMSG_PID, MSG_DONTWAIT);
+
+
+    return ;
+}
+
+static void netlink_input(struct sk_buff *__skb)
+{
+    struct sk_buff *skb;
+    struct nlmsghdr *nlh;
+
+    if (!__skb) {
+        return;
+    }
+    skb = skb_get(__skb);
+    if (skb->len < NLMSG_SPACE(0)) {
+        return;
+    }
+    nlh = nlmsg_hdr(skb);
+    if (NLMSG_PID != nlh->nlmsg_pid) {
+        return ;
+    }
+
+    printk ("kernel recv ok ... \n");
+
+    complete (&cmpl);
+
+    return;
+}
+
 static char *name = "dmatest";
 
 static int __init dmatest_init(void)
 {
     struct thread_data * thread;
+
+    struct netlink_kernel_cfg nkc;
+
     printk("<0>DOPPLER DMA MODULE START!\n");
     /* Schedule multiple concurrent dma tests */
     thread = kmalloc(sizeof(struct thread_data), GFP_KERNEL);
@@ -387,8 +457,27 @@ static int __init dmatest_init(void)
 
     printk("<0>config addr %x  data_addr %x \n", (int)config , (int)data_addr);
     printk("<0>dma module is running !\n");
+
+    // init netlink
+
+    nkc.groups = 0;
+    nkc.flags = 0;
+    nkc.input = netlink_input;
+    nkc.cb_mutex = NULL;
+    nkc.bind = NULL;
+    nkc.unbind = NULL;
+    nkc.compare = NULL;
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &nkc);
+    if (!nl_sk) {
+        printk(KERN_ERR "[netlink] create netlink socket error!\n");
+        goto err;
+    }
+
+    printk("<0>netlink init success!\n");
     return 0;
 
+err:
+    netlink_kernel_release(nl_sk);
 free_threads:
     kfree(thread);
 
