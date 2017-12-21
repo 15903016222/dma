@@ -134,7 +134,7 @@ static int  dma_mem_transfer_to_store_buffer(void) ;
 static void netlink_send(void);
 
 static unsigned int  data_addr ;
-static unsigned int  buff_addr ;
+//static unsigned int  buff_addr ;
 //static struct dma_transfer dma_video  ;
 static struct dma_transfer dma_data   ; 
 static struct dma_transfer dma_buffer ;
@@ -257,7 +257,11 @@ static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
 
-    dma_to_store_buffer() ;
+//    dma_to_store_buffer() ;
+    netlink_send();
+    wait_for_completion (&cmpl);
+    init_completion (&cmpl);
+
     do {
         config[1]++ ;
         OFFSET = config[1] & 0x00000003 ;
@@ -295,11 +299,8 @@ static int dma_mem_transfer_from_fpga (void)
     memset(&dma_data, 0, sizeof(struct dma_transfer));
     dma->phys_from	= DMA_SOURCE_ADDR;
     dma->phys_to	= DMA_START_ADDR ;
-    
     dma->data_type = 0x02;
-
     dma->status = 0;
-
     dma->frame_size  =  DATA_SAVE_BLOCK_SIZE_WORD ; //DATA_FRAME_SIZE ;
     dma->frame_count =  192; //DATA_FRAME_COUNT;
 
@@ -331,16 +332,11 @@ static irqreturn_t dma_start (int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int   dmatest_work (void *data)
+static int dmatest_work (void *data)
 {
 	int ret;
 
-    int i = 20;
     init_completion (&cmpl);
-
-    while (i--) {
-        netlink_send ();
-    }
 
     allow_signal(SIGTERM);
     current->state = TASK_INTERRUPTIBLE;
@@ -356,8 +352,8 @@ static int   dmatest_work (void *data)
     /* Set up transfer data */
     // DMA frome gpmc/eim to Main memory
     dma_mem_transfer_from_fpga();
-    // DMA data to store buffer
-    dma_mem_transfer_to_store_buffer() ;
+//    // DMA data to store buffer
+//    dma_mem_transfer_to_store_buffer() ;
 
 	gpio_request (IMX_GPIO_NR (7, 11), "GPIO_16");
 	gpio_direction_input (IMX_GPIO_NR (7, 11));
@@ -373,28 +369,22 @@ static int   dmatest_work (void *data)
 
 static void netlink_send(void)
 {
-    struct sk_buff *skb_1;
-    struct nlmsghdr *nlh;
-
-    printk ("waiting ... \n");
-    wait_for_completion (&cmpl);
-    init_completion (&cmpl);
+    struct sk_buff *skb_send;
+    struct nlmsghdr *nlh_send;
 
     if (!nl_sk) {
         return;
     }
-    skb_1 = alloc_skb(NLMSG_SPACE(0), GFP_KERNEL);
-    if (!skb_1) {
+    skb_send = alloc_skb(NLMSG_SPACE(0), GFP_KERNEL);
+    if (!skb_send) {
         printk(KERN_ERR "alloc_skb error!\n");
         return ;
     }
-    nlh = nlmsg_put(skb_1, 0, 0, 0, 0, 0);
-    NETLINK_CB(skb_1).portid = 0;
-    NETLINK_CB(skb_1).dst_group = 0;
-    memcpy(NLMSG_DATA(nlh), "", 0);
+    nlh_send = nlmsg_put(skb_send, 0, 0, 0, 0, 0);
+    NETLINK_CB(skb_send).portid = 0;
+    NETLINK_CB(skb_send).dst_group = 0;
 
-    netlink_unicast(nl_sk, skb_1, NLMSG_PID, MSG_DONTWAIT);
-
+    netlink_unicast(nl_sk, skb_send, NLMSG_PID, MSG_DONTWAIT);
 
     return ;
 }
@@ -416,9 +406,9 @@ static void netlink_input(struct sk_buff *__skb)
         return ;
     }
 
-    printk ("kernel recv ok ... \n");
-
     complete (&cmpl);
+
+    kfree_skb (__skb);
 
     return;
 }
@@ -449,8 +439,8 @@ static int __init dmatest_init(void)
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
     memset((void*)data_addr , 0 , 0x100100) ;
 
-    request_mem_region(BUFF_START_ADDR, BUFF_DATA_LENGTH , "buffer_data");
-    buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH );
+//    request_mem_region(BUFF_START_ADDR, BUFF_DATA_LENGTH , "buffer_data");
+//    buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH );
 
     config = (unsigned int*)(data_addr + CONFIG_START_ADDR_OFFSET);
     scan_mark = (char*)(data_addr + SCAN_DATA_MARK_OFFSET)  ;
@@ -459,7 +449,6 @@ static int __init dmatest_init(void)
     printk("<0>dma module is running !\n");
 
     // init netlink
-
     nkc.groups = 0;
     nkc.flags = 0;
     nkc.input = netlink_input;
