@@ -21,14 +21,18 @@
 #define REGION_SIZE              0x00040000
 #define CONFIG_START_ADDR_OFFSET 0x00100000
 #define SCAN_DATA_MARK_OFFSET    0x00200000
-#define DATA_SAVE_BLOCK_SIZE_BIT 1024
+#define DATA_SAVE_BLOCK_PAGE_SIZE (1024 * 4)
 
 #define CONFIG_NUM 11
 
+static volatile unsigned int *config_mmap;
 unsigned int data_addr;
 unsigned char *scan_mark  ;
-int config[CONFIG_NUM];
 unsigned int offset_addr[4] = {0};
+
+int config[CONFIG_NUM];
+static int bDmaStoreProcessing = 0 ;
+
 
 #define DmaFrameBuffer         config[0]
 #define DataDmaCounter         config[1]
@@ -39,8 +43,9 @@ unsigned int offset_addr[4] = {0};
 #define StepsPerResolution     config[6]
 #define ScanZeroIndexOffset    config[7]
 #define MaxStoreIndex          config[8]
-#define ScanTimmerCounter      config[9]
-#define ScanTimmerCircled      config[10]
+
+#define ScanTimmerCounter      config_mmap[9]
+#define ScanTimmerCircled      config_mmap[10]
 
 /*
  * Save data ro file
@@ -55,7 +60,9 @@ void save_data_to_file (int fd)
     size_t tmp = 0     ;
     size_t res = -1    ;
 
-    size = ((StoreFrameCount / 4) + 1) * DATA_SAVE_BLOCK_SIZE_BIT;
+    printf ("Enter in save data func \n");
+
+    size = ((StoreFrameCount / 4) + 1) * DATA_SAVE_BLOCK_PAGE_SIZE;
     if (ScanSource) {
         /*** encoder ***/
         nOffset = DataDmaCounter & 0x03;
@@ -80,10 +87,13 @@ void save_data_to_file (int fd)
     }
 
     lseek (fd, offset, SEEK_SET);
-    size = ((StoreFrameCount / 4) + 1) * DATA_SAVE_BLOCK_SIZE_BIT;
+    size = ((StoreFrameCount / 4) + 1) * DATA_SAVE_BLOCK_PAGE_SIZE;
     tmp = size;
+
     while (tmp) {
-        res = write (fd, (void *)offset_addr[DataDmaCounter & 0x03], tmp);
+        res = write (fd,
+                     (void *)(offset_addr[DataDmaCounter & 0x03] + size - tmp),
+                     tmp);
         if (res < 0) {
             perror ("write");
             return ;
@@ -150,10 +160,8 @@ int main(int argc, char **argv)
     int sock_fd = -1;
     int data_fd = -1;
     int file_fd = -1;
-    int tmp = 0;
-    int len = 0;
 
-    file_fd = open ("data.txt", O_RDWR | O_CREAT);
+    file_fd = open ("/media/sata/data.txt", O_RDWR | O_CREAT);
     if (-1 == file_fd) {
         perror ("open");
         return -1;
@@ -174,7 +182,8 @@ int main(int argc, char **argv)
         close (data_fd);
         return -1;
     }
-    scan_mark = (unsigned char*)(data_addr + SCAN_DATA_MARK_OFFSET)  ;
+    scan_mark = (unsigned char*)(data_addr + SCAN_DATA_MARK_OFFSET);
+    config_mmap = (unsigned int *)(data_addr + CONFIG_START_ADDR_OFFSET);
     offset_addr[0] = data_addr;
     offset_addr[1] = data_addr + 1 * REGION_SIZE;
     offset_addr[2] = data_addr + 2 * REGION_SIZE;
@@ -196,13 +205,12 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    int i = 0, count = 0;
-    for (i = 0; 1; ++i) {
+    while (1) {
         if (netlink_recv_message (sock_fd, config, sizeof (config)) == 0) {
+            printf ("recive success \n");
             save_data_to_file (file_fd);
 		}
 	}
-    printf ("i[%d] count[%d] \n", i, count);
 
     munmap ((void *)data_addr, DMA_DATA_LENGTH);
     close (sock_fd);
