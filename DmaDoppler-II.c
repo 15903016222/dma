@@ -79,8 +79,9 @@
 #define ScanTimmerCounter      config[9]
 #define ScanTimmerCircled      config[10] 
 
+#define CONFIG_NUM 11
+
 struct sock *nl_sk = NULL;
-struct completion cmpl;
 
 volatile unsigned char* scan_mark  ;
 volatile int* config;            // config[0]  DRAW condition
@@ -134,8 +135,8 @@ static int  dma_mem_transfer_to_store_buffer(void) ;
 static void netlink_send(void);
 
 static unsigned int  data_addr ;
-//static unsigned int  buff_addr ;
-//static struct dma_transfer dma_video  ;
+static unsigned int  buff_addr ;
+static struct dma_transfer dma_video  ;
 static struct dma_transfer dma_data   ; 
 static struct dma_transfer dma_buffer ;
 
@@ -256,11 +257,9 @@ static int dma_mem_transfer_to_store_buffer(void)
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
-
 //    dma_to_store_buffer() ;
     netlink_send();
-    wait_for_completion (&cmpl);
-    init_completion (&cmpl);
+    ndelay (5000);
 
     do {
         config[1]++ ;
@@ -334,9 +333,7 @@ static irqreturn_t dma_start (int irq, void *dev_id)
 
 static int dmatest_work (void *data)
 {
-	int ret;
-
-    init_completion (&cmpl);
+    int ret;
 
     allow_signal(SIGTERM);
     current->state = TASK_INTERRUPTIBLE;
@@ -352,7 +349,7 @@ static int dmatest_work (void *data)
     /* Set up transfer data */
     // DMA frome gpmc/eim to Main memory
     dma_mem_transfer_from_fpga();
-//    // DMA data to store buffer
+    // DMA data to store buffer
 //    dma_mem_transfer_to_store_buffer() ;
 
 	gpio_request (IMX_GPIO_NR (7, 11), "GPIO_16");
@@ -375,15 +372,15 @@ static void netlink_send(void)
     if (!nl_sk) {
         return;
     }
-    skb_send = alloc_skb(NLMSG_SPACE(0), GFP_KERNEL);
+    skb_send = alloc_skb(NLMSG_SPACE(CONFIG_NUM * sizeof (int)), GFP_ATOMIC);
     if (!skb_send) {
         printk(KERN_ERR "alloc_skb error!\n");
         return ;
     }
-    nlh_send = nlmsg_put(skb_send, 0, 0, 0, 0, 0);
+    nlh_send = nlmsg_put(skb_send, 0, 0, 0, CONFIG_NUM * sizeof (int), 0);
     NETLINK_CB(skb_send).portid = 0;
     NETLINK_CB(skb_send).dst_group = 0;
-
+    memcpy (NLMSG_DATA(nlh_send), config, CONFIG_NUM * sizeof (int));
     netlink_unicast(nl_sk, skb_send, NLMSG_PID, MSG_DONTWAIT);
 
     return ;
@@ -391,25 +388,25 @@ static void netlink_send(void)
 
 static void netlink_input(struct sk_buff *__skb)
 {
-    struct sk_buff *skb;
-    struct nlmsghdr *nlh;
+//    struct sk_buff *skb;
+//    struct nlmsghdr *nlh;
 
-    if (!__skb) {
-        return;
-    }
-    skb = skb_get(__skb);
-    if (skb->len < NLMSG_SPACE(0)) {
-        return;
-    }
-    nlh = nlmsg_hdr(skb);
-    if (NLMSG_PID != nlh->nlmsg_pid) {
-        return ;
-    }
+//    if (!__skb) {
+//        return;
+//    }
+//    skb = skb_get(__skb);
+//    if (skb->len < NLMSG_SPACE(0)) {
+//        return;
+//    }
+//    nlh = nlmsg_hdr(skb);
+//    if (NLMSG_PID != nlh->nlmsg_pid) {
+//        return ;
+//    }
 
-    complete (&cmpl);
+//    printk ("%s:%s [%d] \n", __FILE__, __func__, __LINE__);
+//    printk ("%s:%s [%d] \n", __FILE__, __func__, __LINE__);
 
     kfree_skb (__skb);
-
     return;
 }
 
