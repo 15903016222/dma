@@ -19,7 +19,7 @@
 
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
-
+#include <linux/uaccess.h>
 #include <linux/io.h>
 
 #include <linux/slab.h>
@@ -83,6 +83,24 @@
 
 struct sock *nl_sk = NULL;
 
+static struct file *fp = NULL;
+static mm_segment_t fs;
+#define BUFFER_SIZE 4096
+
+int config_atomic[CONFIG_NUM];
+#define DmaFrameBufferAtomic         config_atomic[0]
+#define DataDmaCounterAtomic         config_atomic[1]
+#define BufferInUseAtomic            config_atomic[2]
+#define ScanSourceAtomic             config_atomic[3]
+#define StoreFrameCountAtomic        config_atomic[4]
+#define EncoderCounterOffsetAtomic   config_atomic[5]
+#define StepsPerResolutionAtomic     config_atomic[6]
+#define ScanZeroIndexOffsetAtomic    config_atomic[7]
+#define MaxStoreIndexAtomic          config_atomic[8]
+#define ScanTimmerCounterAtomic      config_atomic[9]
+#define ScanTimmerCircledAtomic      config_atomic[10]
+
+
 volatile unsigned char* scan_mark  ;
 volatile int* config;            // config[0]  DRAW condition
 // config[1]  DMA counter
@@ -104,8 +122,7 @@ int OFFSET_ADDR[4] = {
     DMA_START_ADDR + 3 * REGION_SIZE
 } ;
 
-static unsigned int video_phys_to = 0x809ac000;
-module_param(video_phys_to, int, S_IRUGO)     ;
+int OFFSET_VIRTUAL_ADDR[4];
 
 struct thread_data {
     int nr;
@@ -141,15 +158,68 @@ static bool dma_m2m_filter (struct dma_chan *chan, void *param)
     return true;
 }
 
+void save_dma_data_file (void)
+{
+    int  EncoderIndex   ;
+    int* pEncoderIndex  ;
+    int  nOffset        ;
+    loff_t pos;
+
+    if(ScanSourceAtomic) {
+        /* encoder */
+        nOffset  = DataDmaCounterAtomic & 0x00000003 ;
+        pEncoderIndex = & EncoderIndex ;
+        memcpy((void *)pEncoderIndex,
+               (void *)(nOffset *  REGION_SIZE + EncoderCounterOffsetAtomic + data_addr),
+               4);
+        EncoderIndex  = EncoderIndex / StepsPerResolutionAtomic + ScanZeroIndexOffsetAtomic;
+        if(EncoderIndex > MaxStoreIndexAtomic || EncoderIndex < 0) {
+            /* out of range , do not dma */
+            return ;
+        }
+        scan_mark[EncoderIndex] = 0xff ;
+        pos  = EncoderIndex * StoreFrameCountAtomic * BUFFER_SIZE  ;
+    }
+    else {
+        /* time */
+        if(ScanTimmerCounterAtomic > MaxStoreIndexAtomic) {
+            /* out of range , restart from 0x90000000 */
+            ScanTimmerCounter = 0 ;
+            ScanTimmerCircled++ ;
+        }
+        scan_mark[ScanTimmerCounterAtomic]  = 0xff ;
+        pos = ScanTimmerCounterAtomic * BUFFER_SIZE;    // address to store
+    }
+
+    if(dma_data.frame_count != StoreFrameCount) {
+        /* frame count */
+        dma_data.frame_count = StoreFrameCount  ;
+    }
+
+    set_fs(KERNEL_DS);
+    vfs_write(fp,
+              (const char *)OFFSET_VIRTUAL_ADDR[DataDmaCounterAtomic & 0x00000003],
+              (StoreFrameCountAtomic / 4 + 1) * BUFFER_SIZE,
+              &pos);
+
+    ScanTimmerCounter++;
+}
+
+
 /*
  * The callback gets called by the DMA interrupt handler after
  * the transfer is complete.
  */
+static unsigned int count = 0;
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
+    ++count;
+    if (1000 * 60 - 1 == count % (1000 * 60)) {
+        printk ("irq: ...... \n");
+    }
+    memcpy ((void *)config_atomic, (void *)config, CONFIG_NUM * sizeof (int));
     netlink_send();
-    ndelay (5000);
 
     do {
         config[1]++ ;
@@ -211,11 +281,14 @@ static int dma_mem_transfer_from_fpga (void)
 
     return 0;
 }
-
+static unsigned irq_num = 0;
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
-
+    ++irq_num;
+    if (1000 * 60 - 1 == irq_num % (1000 * 60)) {
+        printk ("irq_num: ...... \n");
+    }
     dma_async_issue_pending (dma->ch);
 
 	return IRQ_HANDLED;
@@ -249,6 +322,7 @@ static int dmatest_work (void *data)
 		printk ("request_irq failed \n");
 		return ret;
 	}
+
     return 0;
 }
 
@@ -260,25 +334,44 @@ static void netlink_send(void)
     if (!nl_sk) {
         return;
     }
-    skb_send = alloc_skb(NLMSG_SPACE(CONFIG_NUM * sizeof (int)), GFP_ATOMIC);
+    skb_send = alloc_skb(NLMSG_SPACE(0), GFP_ATOMIC);
     if (!skb_send) {
         printk(KERN_ERR "alloc_skb error!\n");
         return ;
     }
-    nlh_send = nlmsg_put(skb_send, 0, 0, 0, CONFIG_NUM * sizeof (int), 0);
+    nlh_send = nlmsg_put(skb_send, 0, 0, 0, 0, 0);
     NETLINK_CB(skb_send).portid = 0;
     NETLINK_CB(skb_send).dst_group = 0;
-    memcpy ( NLMSG_DATA(nlh_send),
-             (const void *)config,
-             CONFIG_NUM * sizeof (int));
     netlink_unicast(nl_sk, skb_send, NLMSG_PID, MSG_DONTWAIT);
 
     return ;
 }
 
+static int bDmaStoreProcessing = 0;
+static unsigned int num = 0;
+static unsigned int num1 = 0;
 static void netlink_input(struct sk_buff *__skb)
 {
+    struct sk_buff *skb;
+
+    skb = skb_get(__skb);
+    if( skb->len < NLMSG_SPACE(0)) {
+            return;
+    }
+    ++num1;
+    if (bDmaStoreProcessing) {
+        kfree_skb (__skb);
+        return ;
+    }
+    bDmaStoreProcessing = 1;
+    save_dma_data_file ();
+    if (1000 * 60 - 1 == num % (1000 * 60)) {
+        printk ("kernel: num1[%d] num[%d] \n", num1, num);
+    }
+    ++num;
+
     kfree_skb (__skb);
+    bDmaStoreProcessing = 0;
     return;
 }
 
@@ -307,6 +400,10 @@ static int __init dmatest_init(void)
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
     memset((void*)data_addr , 0 , 0x100100) ;
+    OFFSET_VIRTUAL_ADDR[0] = data_addr;
+    OFFSET_VIRTUAL_ADDR[1] = data_addr + REGION_SIZE;
+    OFFSET_VIRTUAL_ADDR[2] = data_addr + REGION_SIZE * 2;
+    OFFSET_VIRTUAL_ADDR[3] = data_addr + REGION_SIZE * 3;
 
     config = (unsigned int*)(data_addr + CONFIG_START_ADDR_OFFSET);
     scan_mark = (char*)(data_addr + SCAN_DATA_MARK_OFFSET)  ;
@@ -328,6 +425,14 @@ static int __init dmatest_init(void)
         goto err;
     }
 
+    fp = filp_open("/media/sata/kernel_file", O_RDWR | O_CREAT, 0644);
+    if (IS_ERR(fp)) {
+        printk("create file error\n");
+        return -1;
+    }
+    fs = get_fs();
+
+    printk ("sizeof(loff_t) = %d \n", sizeof (loff_t));
     printk("<0>netlink init success!\n");
     return 0;
 
@@ -341,6 +446,9 @@ free_threads:
 
 static void __exit dmatest_exit(void)
 {
+    filp_close(fp, NULL);
+    set_fs(fs);
+
     return;
 }
 
