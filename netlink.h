@@ -4,8 +4,7 @@
 #include <linux/net.h>
 
 struct sockaddr_nl;
-class Netlink
-{
+class Netlink {
 public:
     Netlink (int pid = 100, int protocol = 25);
     ~Netlink ();
