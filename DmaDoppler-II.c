@@ -31,8 +31,7 @@
 
 #include <linux/workqueue.h> //
 
-#include <net/netlink.h>
-#include <net/sock.h>
+
 
 #define NETLINK_TEST (25)
 #define NLMSG_PID    (100)
@@ -81,8 +80,7 @@
 
 #define CONFIG_NUM 11
 
-struct sock *nl_sk = NULL;
-
+static wait_queue_head_t twq;
 static struct file *fp = NULL;
 static mm_segment_t fs;
 #define BUFFER_SIZE 4096
@@ -146,8 +144,6 @@ struct dma_transfer {
 static int  dmatest_work(void *data);
 static void dma_memcpy_callback_from_fpga(void *data);
 
-static void netlink_send(void);
-
 static unsigned int  data_addr ;
 static struct dma_transfer dma_data   ; 
 static bool dma_m2m_filter (struct dma_chan *chan, void *param)
@@ -210,11 +206,13 @@ void save_dma_data_file (void)
  * The callback gets called by the DMA interrupt handler after
  * the transfer is complete.
  */
+
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
     memcpy ((void *)config_atomic, (void *)config, CONFIG_NUM * sizeof (int));
-    netlink_send();
+//    netlink_send();
+    wake_up (&twq);
 
     do {
         config[1]++ ;
@@ -277,15 +275,52 @@ static int dma_mem_transfer_from_fpga (void)
     return 0;
 }
 
+static unsigned int num = 0;
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
+    ++num;
+    if (6000 * 60 - 1 == num % (6000 * 60)) {
+        printk ("callback: num[%d] ... \n", num);
+    }
 
     dma_async_issue_pending (dma->ch);
 
 	return IRQ_HANDLED;
 }
 
+/* data save thread */
+static unsigned count = 0;
+static int save_dma_data_thread (void *data) {
+    wait_queue_t wait;
+    init_waitqueue_entry (&wait, current);
+
+    add_wait_queue (&twq, &wait);
+
+    while (1) {
+        set_current_state (TASK_INTERRUPTIBLE);
+
+        schedule ();
+
+        set_current_state (TASK_RUNNING);
+//      remove_wait_queue (&twq, &wait);
+
+        if (signal_pending (current)) {
+//            printk ("signal wake up. \n");
+            return -ERESTARTSYS;
+        } else {
+            ++count;
+            if (6000 * 60 - 1 == count % (6000 * 60)) {
+                printk ("wait_queue count[%d] ... \n", count);
+            }
+//            printk ("driver wake up. \n");
+        }
+    }
+
+    return 0;
+}
+
+/* dma work thread */
 static int dmatest_work (void *data)
 {
     int ret;
@@ -318,54 +353,11 @@ static int dmatest_work (void *data)
     return 0;
 }
 
-static void netlink_send(void)
-{
-    struct sk_buff *skb_send;
-    struct nlmsghdr *nlh_send;
-
-    if (!nl_sk) {
-        return;
-    }
-    skb_send = alloc_skb(NLMSG_SPACE(0), GFP_ATOMIC);
-    if (!skb_send) {
-        printk(KERN_ERR "alloc_skb error!\n");
-        return ;
-    }
-    nlh_send = nlmsg_put(skb_send, 0, 0, 0, 0, 0);
-    NETLINK_CB(skb_send).portid = 0;
-    NETLINK_CB(skb_send).dst_group = 0;
-    netlink_unicast(nl_sk, skb_send, NLMSG_PID, MSG_DONTWAIT);
-
-    return ;
-}
-
-static int bDmaStoreProcessing = 0;
-static void netlink_input(struct sk_buff *__skb)
-{
-    struct sk_buff *skb;
-
-    skb = skb_get(__skb);
-    if( skb->len < NLMSG_SPACE(0)) {
-            return;
-    }
-    if (bDmaStoreProcessing) {
-        kfree_skb (__skb);
-        return ;
-    }
-    bDmaStoreProcessing = 1;
-    save_dma_data_file ();
-    kfree_skb (__skb);
-    bDmaStoreProcessing = 0;
-    return;
-}
-
 static char *name = "dmatest";
 
 static int __init dmatest_init(void)
 {
     struct thread_data * thread;
-
-    struct netlink_kernel_cfg nkc;
 
     printk("<0>DOPPLER DMA MODULE START!\n");
     /* Schedule multiple concurrent dma tests */
@@ -378,8 +370,13 @@ static int __init dmatest_init(void)
     thread->nr = 1;
     thread->name = name;
 
-    /* Schedule the test thread */
+    /* run the test thread */
     kthread_run (dmatest_work, thread, thread->name);
+
+    /* run transfer data thread */
+    init_waitqueue_head (&twq);
+    kthread_run (save_dma_data_thread, NULL, "wait_queue_test");
+    printk ("dma_transfer_thread run ... \n");
 
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
@@ -395,20 +392,6 @@ static int __init dmatest_init(void)
     printk("<0>config addr %x  data_addr %x \n", (int)config , (int)data_addr);
     printk("<0>dma module is running !\n");
 
-    // init netlink
-    nkc.groups = 0;
-    nkc.flags = 0;
-    nkc.input = netlink_input;
-    nkc.cb_mutex = NULL;
-    nkc.bind = NULL;
-    nkc.unbind = NULL;
-    nkc.compare = NULL;
-    nl_sk = netlink_kernel_create(&init_net, NETLINK_TEST, &nkc);
-    if (!nl_sk) {
-        printk(KERN_ERR "[netlink] create netlink socket error!\n");
-        goto err;
-    }
-
     fp = filp_open("/media/sata/kernel_file", O_RDWR | O_CREAT, 0644);
     if (IS_ERR(fp)) {
         printk("create file error\n");
@@ -420,8 +403,6 @@ static int __init dmatest_init(void)
     printk("<0>netlink init success!\n");
     return 0;
 
-err:
-    netlink_kernel_release(nl_sk);
 free_threads:
     kfree(thread);
 
