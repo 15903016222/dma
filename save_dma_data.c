@@ -143,25 +143,12 @@ void save_dma_data (void)
         sleep (1);
     }
 
-    unsigned int count = 0;
-    time_t start_ts;
-    time_t end_ts;
-
     while (1) {
-        if (0 == count % (1000 * 60)) {
-            start_ts = time (NULL);
-        }
         if (res = recvmsg(sock_fd, &msg_recv, MSG_WAITALL) < 0) {
             perror ("recvmsg");
-            printf ("count[%d] \n", count);
             continue;
         }
         sendmsg(sock_fd, &msg_send, 0);
-        ++count;
-        if (1000 * 60 -1 == count % (1000 * 60)) {
-            end_ts = time (NULL);
-            printf ("end_ts - start_ts = %d \n", end_ts - start_ts);
-        }
     }
 
     close (sock_fd);

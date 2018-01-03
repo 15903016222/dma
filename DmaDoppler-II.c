@@ -210,14 +210,9 @@ void save_dma_data_file (void)
  * The callback gets called by the DMA interrupt handler after
  * the transfer is complete.
  */
-static unsigned int count = 0;
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
-    ++count;
-    if (1000 * 60 - 1 == count % (1000 * 60)) {
-        printk ("irq: ...... \n");
-    }
     memcpy ((void *)config_atomic, (void *)config, CONFIG_NUM * sizeof (int));
     netlink_send();
 
@@ -281,14 +276,11 @@ static int dma_mem_transfer_from_fpga (void)
 
     return 0;
 }
-static unsigned irq_num = 0;
+
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
-    ++irq_num;
-    if (1000 * 60 - 1 == irq_num % (1000 * 60)) {
-        printk ("irq_num: ...... \n");
-    }
+
     dma_async_issue_pending (dma->ch);
 
 	return IRQ_HANDLED;
@@ -348,8 +340,6 @@ static void netlink_send(void)
 }
 
 static int bDmaStoreProcessing = 0;
-static unsigned int num = 0;
-static unsigned int num1 = 0;
 static void netlink_input(struct sk_buff *__skb)
 {
     struct sk_buff *skb;
@@ -358,18 +348,12 @@ static void netlink_input(struct sk_buff *__skb)
     if( skb->len < NLMSG_SPACE(0)) {
             return;
     }
-    ++num1;
     if (bDmaStoreProcessing) {
         kfree_skb (__skb);
         return ;
     }
     bDmaStoreProcessing = 1;
     save_dma_data_file ();
-    if (1000 * 60 - 1 == num % (1000 * 60)) {
-        printk ("kernel: num1[%d] num[%d] \n", num1, num);
-    }
-    ++num;
-
     kfree_skb (__skb);
     bDmaStoreProcessing = 0;
     return;
