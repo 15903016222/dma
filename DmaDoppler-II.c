@@ -1,45 +1,26 @@
-//#include <linux/config.h>
-#include <linux/moduleparam.h>
 #include <linux/module.h>
+#include <linux/init.h>
+#include <linux/moduleparam.h>
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/gpio.h>
-#include <linux/mman.h>
 #include <linux/fs.h>
-
-#include <linux/timer.h>
-#include <linux/sched.h>
-#include <linux/interrupt.h>
-#include <linux/pm.h>
-#include <linux/spinlock.h>
-#include <linux/delay.h>
-
-#include <linux/device.h>
-#include <linux/dma-mapping.h>
+#include <linux/miscdevice.h>
 #include <linux/uaccess.h>
-#include <linux/io.h>
-
+#include <linux/interrupt.h>
 #include <linux/slab.h>
-#include <linux/mman.h>
 #include <linux/kthread.h>
-#include <linux/dmaengine.h>
 #include <linux/platform_data/dma-imx.h>
-#include <linux/platform_data/dma-imx-sdma.h>
-
-#include <linux/workqueue.h> //
-
-
-
-#define NETLINK_TEST (25)
-#define NLMSG_PID    (100)
 
 #define IMX_GPIO_NR(bank, nr)  (((bank) - 1) * 32 + (nr))
 #define GPIO_IRQ(bank, nr)     (gpio_to_irq (IMX_GPIO_NR((bank), (nr))))
 
 #define VERSION "20170327"
+
+/* reset command */
+#define DMA_RESET 0x80000
 
 #define	FB_FRAME_SIZE	  768
 #define DATA_FRAME_SIZE  1024
@@ -75,29 +56,8 @@
 #define StepsPerResolution     config[6]
 #define ScanZeroIndexOffset    config[7]
 #define MaxStoreIndex          config[8]
-#define ScanTimmerCounter      config[9]
-#define ScanTimmerCircled      config[10] 
-
-#define CONFIG_NUM 11
-
-static wait_queue_head_t twq;
-static struct file *fp = NULL;
-static mm_segment_t fs;
-#define BUFFER_SIZE 4096
-
-int config_atomic[CONFIG_NUM];
-#define DmaFrameBufferAtomic         config_atomic[0]
-#define DataDmaCounterAtomic         config_atomic[1]
-#define BufferInUseAtomic            config_atomic[2]
-#define ScanSourceAtomic             config_atomic[3]
-#define StoreFrameCountAtomic        config_atomic[4]
-#define EncoderCounterOffsetAtomic   config_atomic[5]
-#define StepsPerResolutionAtomic     config_atomic[6]
-#define ScanZeroIndexOffsetAtomic    config_atomic[7]
-#define MaxStoreIndexAtomic          config_atomic[8]
-#define ScanTimmerCounterAtomic      config_atomic[9]
-#define ScanTimmerCircledAtomic      config_atomic[10]
-
+#define StoreCurrentIndex      config[9]
+#define StoreIndexCircled      config[10]
 
 volatile unsigned char* scan_mark  ;
 volatile int* config;            // config[0]  DRAW condition
@@ -112,6 +72,8 @@ volatile int* config;            // config[0]  DRAW condition
 // config[9]  Scan Timer counter
 // config[10] whether the data counter is circled in 256M memory
 
+
+
 int OFFSET   ;
 int OFFSET_ADDR[4] = {
     DMA_START_ADDR ,
@@ -120,7 +82,8 @@ int OFFSET_ADDR[4] = {
     DMA_START_ADDR + 3 * REGION_SIZE
 } ;
 
-int OFFSET_VIRTUAL_ADDR[4];
+static unsigned int video_phys_to = 0x809ac000;
+module_param(video_phys_to, int, S_IRUGO)     ;
 
 struct thread_data {
     int nr;
@@ -143,9 +106,16 @@ struct dma_transfer {
 
 static int  dmatest_work(void *data);
 static void dma_memcpy_callback_from_fpga(void *data);
+static int  dma_mem_transfer_to_store_buffer(void) ;
 
 static unsigned int  data_addr ;
+static unsigned int  buff_addr ;
+//static struct dma_transfer dma_video  ;
 static struct dma_transfer dma_data   ; 
+static struct dma_transfer dma_buffer ;
+
+static int bDmaStoreProcessing  = 0 ;
+
 static bool dma_m2m_filter (struct dma_chan *chan, void *param)
 {
     if (!imx_dma_is_general_purpose(chan))
@@ -154,66 +124,115 @@ static bool dma_m2m_filter (struct dma_chan *chan, void *param)
     return true;
 }
 
-void save_dma_data_file (void)
+// dma data to buffer 0x90000000
+// dma finish callback function
+static void dma_memcpy_callback_to_buffer(void *data)
+{
+    //printk("<0>DMA TO BUFFER!\n");
+    //printk("<0>%d,%d,%d,%d,%d,%d,%d\n",ScanSource ,StoreFrameCount ,EncoderCounterOffset ,
+    //          StepsPerResolution, ScanZeroIndexOffset, MaxStoreIndex , StoreCurrentIndex);
+    bDmaStoreProcessing = 0 ;
+    StoreCurrentIndex++ ;
+}
+
+// dma data to setted buffer address
+static void dma_to_store_buffer(void)
 {
     int  EncoderIndex   ;
     int* pEncoderIndex  ;
     int  nOffset        ;
-    loff_t pos;
 
-    if(ScanSourceAtomic) {
+    struct dma_transfer* dma = &dma_buffer ;
+    if(bDmaStoreProcessing) {
+        return ;
+    }
+    bDmaStoreProcessing = 1 ;
+
+    if(ScanSource) {
         /* encoder */
-        nOffset  = DataDmaCounterAtomic & 0x00000003 ;
+        nOffset  = DataDmaCounter & 0x00000003 ;
         pEncoderIndex = & EncoderIndex ;
-        memcpy((void *)pEncoderIndex,
-               (void *)(nOffset *  REGION_SIZE + EncoderCounterOffsetAtomic + data_addr),
-               4);
-        EncoderIndex  = EncoderIndex / StepsPerResolutionAtomic + ScanZeroIndexOffsetAtomic;
-        if(EncoderIndex > MaxStoreIndexAtomic || EncoderIndex < 0) {
+        memcpy((void*)pEncoderIndex , (void*)(nOffset *  REGION_SIZE + EncoderCounterOffset + data_addr) , 4);
+        EncoderIndex  = EncoderIndex / StepsPerResolution + ScanZeroIndexOffset;
+        if(EncoderIndex > MaxStoreIndex || EncoderIndex < 0) {
             /* out of range , do not dma */
+            bDmaStoreProcessing = 0 ;
             return ;
         }
         scan_mark[EncoderIndex] = 0xff ;
-        pos  = EncoderIndex * StoreFrameCountAtomic * BUFFER_SIZE  ;
-    }
-    else {
+        nOffset  = EncoderIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + BUFF_START_ADDR  ;
+        dma->phys_to  =  nOffset  ;    // address to store
+    } else {
         /* time */
-        if(ScanTimmerCounterAtomic > MaxStoreIndexAtomic) {
+        if(StoreCurrentIndex > MaxStoreIndex) {
             /* out of range , restart from 0x90000000 */
-            ScanTimmerCounter = 0 ;
-            ScanTimmerCircled++ ;
+            StoreCurrentIndex = 0 ;
+            StoreIndexCircled++ ;
         }
-        scan_mark[ScanTimmerCounterAtomic]  = 0xff ;
-        pos = ScanTimmerCounterAtomic * BUFFER_SIZE;    // address to store
+        scan_mark[StoreCurrentIndex]  = 0xff ;
+        dma->phys_to   = StoreCurrentIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + BUFF_START_ADDR;    // address to store
     }
 
-    if(dma_data.frame_count != StoreFrameCount) {
+    if(dma->frame_count != StoreFrameCount) {
         /* frame count */
-        dma_data.frame_count = StoreFrameCount  ;
+        dma->frame_count = StoreFrameCount  ;
     }
+    /* set dma source address */
+    dma->phys_from   = OFFSET_ADDR[DataDmaCounter & 0x00000003] ;
 
-    set_fs(KERNEL_DS);
-    vfs_write(fp,
-              (const char *)OFFSET_VIRTUAL_ADDR[DataDmaCounterAtomic & 0x00000003],
-              (StoreFrameCountAtomic / 4 + 1) * BUFFER_SIZE,
-              &pos);
+    dma->dma_m2m_config.direction = DMA_MEM_TO_MEM;
+    dma->dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+    dmaengine_slave_config(dma->ch, &dma->dma_m2m_config);
+    dma->dma_m2m_desc = dma->ch->device->device_prep_dma_memcpy(dma->ch,
+                                        dma->phys_to, dma->phys_from,
+                                        dma->data_type * dma->frame_size * dma->frame_count,0);
+    dma->dma_m2m_desc->callback = dma_memcpy_callback_to_buffer;
+    dmaengine_submit(dma->dma_m2m_desc);
+    dma_async_issue_pending (dma->ch);
 
-    ScanTimmerCounter++;
 }
 
+// dma to buffer channel init
+static int dma_mem_transfer_to_store_buffer(void)
+{
+    struct dma_transfer* dma = &dma_buffer ;
+
+    dma_cap_mask_t dma_m2m_mask;
+    struct imx_dma_data m2m_dma_data = {0};
+
+    dma_cap_zero (dma_m2m_mask);
+    dma_cap_set (DMA_SLAVE, dma_m2m_mask);
+    m2m_dma_data.peripheral_type = IMX_DMATYPE_MEMORY;
+    m2m_dma_data.priority = DMA_PRIO_HIGH;
+
+    memset(dma, 0, sizeof(struct dma_transfer));
+    dma->frame_size  =  DATA_SAVE_BLOCK_SIZE_WORD  ;
+    dma->frame_count =  192 ;
+    dma->phys_from   =  DMA_START_ADDR   ;
+    dma->phys_to     =  BUFF_START_ADDR  ;
+    
+    dma->data_type   = 0x02;
+
+    dma->status      = 0;
+
+    dma->ch = dma_request_channel(dma_m2m_mask, dma_m2m_filter, &m2m_dma_data);
+    if (!dma->ch) {
+        printk(KERN_ERR "Could not get DMA with dma_request_channel()\n");
+        return -ENOMEM;
+    }
+
+    return 0;
+}
 
 /*
  * The callback gets called by the DMA interrupt handler after
  * the transfer is complete.
  */
-
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
-    memcpy ((void *)config_atomic, (void *)config, CONFIG_NUM * sizeof (int));
-//    netlink_send();
-    wake_up (&twq);
 
+    dma_to_store_buffer() ;
     do {
         config[1]++ ;
         OFFSET = config[1] & 0x00000003 ;
@@ -251,8 +270,11 @@ static int dma_mem_transfer_from_fpga (void)
     memset(&dma_data, 0, sizeof(struct dma_transfer));
     dma->phys_from	= DMA_SOURCE_ADDR;
     dma->phys_to	= DMA_START_ADDR ;
+    
     dma->data_type = 0x02;
+
     dma->status = 0;
+
     dma->frame_size  =  DATA_SAVE_BLOCK_SIZE_WORD ; //DATA_FRAME_SIZE ;
     dma->frame_count =  192; //DATA_FRAME_COUNT;
 
@@ -275,55 +297,18 @@ static int dma_mem_transfer_from_fpga (void)
     return 0;
 }
 
-static unsigned int num = 0;
 static irqreturn_t dma_start (int irq, void *dev_id)
 {
     struct dma_transfer* dma = &dma_data ;
-    ++num;
-    if (6000 * 60 - 1 == num % (6000 * 60)) {
-        printk ("callback: num[%d] ... \n", num);
-    }
 
     dma_async_issue_pending (dma->ch);
 
 	return IRQ_HANDLED;
 }
 
-/* data save thread */
-static unsigned count = 0;
-static int save_dma_data_thread (void *data) {
-    wait_queue_t wait;
-    init_waitqueue_entry (&wait, current);
-
-    add_wait_queue (&twq, &wait);
-
-    while (1) {
-        set_current_state (TASK_INTERRUPTIBLE);
-
-        schedule ();
-
-        set_current_state (TASK_RUNNING);
-//      remove_wait_queue (&twq, &wait);
-
-        if (signal_pending (current)) {
-//            printk ("signal wake up. \n");
-            return -ERESTARTSYS;
-        } else {
-            ++count;
-            if (6000 * 60 - 1 == count % (6000 * 60)) {
-                printk ("wait_queue count[%d] ... \n", count);
-            }
-//            printk ("driver wake up. \n");
-        }
-    }
-
-    return 0;
-}
-
-/* dma work thread */
-static int dmatest_work (void *data)
+static int   dmatest_work (void *data)
 {
-    int ret;
+	int ret;
 
     allow_signal(SIGTERM);
     current->state = TASK_INTERRUPTIBLE;
@@ -339,6 +324,8 @@ static int dmatest_work (void *data)
     /* Set up transfer data */
     // DMA frome gpmc/eim to Main memory
     dma_mem_transfer_from_fpga();
+    // DMA data to store buffer
+    dma_mem_transfer_to_store_buffer() ;
 
 	gpio_request (IMX_GPIO_NR (7, 11), "GPIO_16");
 	gpio_direction_input (IMX_GPIO_NR (7, 11));
@@ -349,16 +336,41 @@ static int dmatest_work (void *data)
 		printk ("request_irq failed \n");
 		return ret;
 	}
+    return 0;
+}
+
+static long dma_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    unsigned int tmp, i;
+    if (arg)
+        i = copy_from_user(&tmp,(void *)arg,sizeof(tmp));
+
+    switch (cmd) {
+        case DMA_RESET:
+            /*
+             *
+             */
+            break;
+        default:
+            break;
+    }
 
     return 0;
 }
 
-static char *name = "dmatest";
+struct file_operations dma_fops = {
+    .unlocked_ioctl = dma_ioctl,
+};
+
+static struct miscdevice dma_misc = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "dma",
+    .fops = &dma_fops
+};
 
 static int __init dmatest_init(void)
 {
     struct thread_data * thread;
-
     printk("<0>DOPPLER DMA MODULE START!\n");
     /* Schedule multiple concurrent dma tests */
     thread = kmalloc(sizeof(struct thread_data), GFP_KERNEL);
@@ -368,39 +380,26 @@ static int __init dmatest_init(void)
 
     memset(thread, 0, sizeof(struct thread_data));
     thread->nr = 1;
-    thread->name = name;
+    thread->name = "dmatest";
 
-    /* run the test thread */
+    /* Schedule the test thread */
     kthread_run (dmatest_work, thread, thread->name);
 
-    /* run transfer data thread */
-    init_waitqueue_head (&twq);
-    kthread_run (save_dma_data_thread, NULL, "wait_queue_test");
-    printk ("dma_transfer_thread run ... \n");
+    /* register a character device */
+    misc_register(&dma_misc);
 
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
     memset((void*)data_addr , 0 , 0x100100) ;
-    OFFSET_VIRTUAL_ADDR[0] = data_addr;
-    OFFSET_VIRTUAL_ADDR[1] = data_addr + REGION_SIZE;
-    OFFSET_VIRTUAL_ADDR[2] = data_addr + REGION_SIZE * 2;
-    OFFSET_VIRTUAL_ADDR[3] = data_addr + REGION_SIZE * 3;
+
+    request_mem_region(BUFF_START_ADDR, BUFF_DATA_LENGTH , "buffer_data");
+    buff_addr = (unsigned int )ioremap( BUFF_START_ADDR , BUFF_DATA_LENGTH );
 
     config = (unsigned int*)(data_addr + CONFIG_START_ADDR_OFFSET);
     scan_mark = (char*)(data_addr + SCAN_DATA_MARK_OFFSET)  ;
 
     printk("<0>config addr %x  data_addr %x \n", (int)config , (int)data_addr);
     printk("<0>dma module is running !\n");
-
-    fp = filp_open("/media/sata/kernel_file", O_RDWR | O_CREAT, 0644);
-    if (IS_ERR(fp)) {
-        printk("create file error\n");
-        return -1;
-    }
-    fs = get_fs();
-
-    printk ("sizeof(loff_t) = %d \n", sizeof (loff_t));
-    printk("<0>netlink init success!\n");
     return 0;
 
 free_threads:
@@ -411,8 +410,7 @@ free_threads:
 
 static void __exit dmatest_exit(void)
 {
-    filp_close(fp, NULL);
-    set_fs(fs);
+    misc_deregister(&dma_misc);
 
     return;
 }
