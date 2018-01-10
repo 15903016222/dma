@@ -18,6 +18,8 @@
 #define GPIO_IRQ(bank, nr)     (gpio_to_irq (IMX_GPIO_NR((bank), (nr))))
 
 #define VERSION "20170327"
+/* reset command */
+#define DMA_RESET 0x80000
 
 #define	FB_FRAME_SIZE	  768
 #define DATA_FRAME_SIZE  1024
@@ -207,6 +209,37 @@ static int dmatest_work (void *data)
     return 0;
 }
 
+static long dma_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    unsigned long flags;
+    unsigned int tmp, i;
+    if (arg)
+        i = copy_from_user(&tmp,(void *)arg,sizeof(tmp));
+
+    switch (cmd) {
+        case DMA_RESET:
+            local_irq_save(flags) ;
+            StoreCurrentIndex = 0 ;
+            StoreIndexCircled = 0 ;
+            local_irq_restore(flags);
+            break;
+        default:
+            break;
+    }
+
+    return 0;
+}
+
+struct file_operations dma_fops = {
+    .unlocked_ioctl = dma_ioctl,
+};
+
+static struct miscdevice dma_misc = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "dma",
+    .fops = &dma_fops
+};
+
 static int __init dmatest_init(void)
 {
     struct thread_data * thread;
@@ -223,6 +256,9 @@ static int __init dmatest_init(void)
 
     /* Schedule the test thread */
     kthread_run (dmatest_work, thread, thread->name);
+
+    /* register a character device */
+    misc_register(&dma_misc);
 
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
@@ -246,6 +282,8 @@ free_threads:
 
 static void __exit dmatest_exit(void)
 {
+    misc_deregister(&dma_misc);
+
     return;
 }
 
