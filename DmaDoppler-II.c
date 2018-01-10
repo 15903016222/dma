@@ -37,7 +37,6 @@
 #define SCAN_DATA_MARK_OFFSET    0x00200000
 #define CONFIG_DATA_LENGTH       0x00000100
 
-#define REGION_SIZE              0x00040000     // 256K
 #define DATA_SAVE_BLOCK_SIZE_BIT     1024
 #define DATA_SAVE_BLOCK_SIZE_WORD     512
 
@@ -66,16 +65,6 @@ volatile int* config;            // config[0]  DRAW condition
 // config[9]  Curren Index to Store
 // config[10] whether the Store Index is circled in 512M memory
 
-
-
-int OFFSET   ;
-int OFFSET_ADDR[4] = {
-    DMA_START_ADDR ,
-    DMA_START_ADDR +     REGION_SIZE ,
-    DMA_START_ADDR + 2 * REGION_SIZE ,
-    DMA_START_ADDR + 3 * REGION_SIZE
-} ;
-
 struct thread_data {
     int nr;
     pid_t pid;
@@ -97,14 +86,10 @@ struct dma_transfer {
 
 static int  dmatest_work(void *data);
 static void dma_memcpy_callback_from_fpga(void *data);
-static int  dma_mem_transfer_to_store_buffer(void) ;
 
 static unsigned int  data_addr ;
 static unsigned int  buff_addr ;
 static struct dma_transfer dma_data   ; 
-static struct dma_transfer dma_buffer ;
-
-static int bDmaStoreProcessing  = 0 ;
 
 static bool dma_m2m_filter (struct dma_chan *chan, void *param)
 {
@@ -114,81 +99,6 @@ static bool dma_m2m_filter (struct dma_chan *chan, void *param)
     return true;
 }
 
-// dma data to buffer 0x30000000
-// dma finish callback function
-static void dma_memcpy_callback_to_buffer(void *data)
-{
-    //printk("<0>DMA TO BUFFER!\n");
-    //printk("<0>%d,%d,%d,%d,%d,%d,%d\n",ScanSource ,StoreFrameCount ,EncoderCounterOffset ,
-    //          StepsPerResolution, ScanZeroIndexOffset, MaxStoreIndex , StoreCurrentIndex);
-    bDmaStoreProcessing = 0 ;
-    StoreCurrentIndex++ ;
-}
-
-// dma data to setted buffer address
-static void dma_to_store_buffer(void)
-{
-    struct dma_transfer* dma = &dma_buffer ;
-    if(bDmaStoreProcessing) {
-        return ;
-    }
-    bDmaStoreProcessing = 1 ;
-
-    if(StoreCurrentIndex > MaxStoreIndex) {
-        /* out of range , restart from 0x30000000 */
-        StoreCurrentIndex = 0 ;
-        StoreIndexCircled++ ;
-    }
-//    scan_mark[StoreCurrentIndex]  = 0xff ;
-    dma->phys_to   = StoreCurrentIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + BUFF_START_ADDR;    // address to store
-
-    if(dma->frame_count != StoreFrameCount) {
-        /* frame count */
-        dma->frame_count = StoreFrameCount  ;
-    }
-    /* set dma source address */
-    dma->phys_from   = OFFSET_ADDR[DataDmaCounter & 0x00000003] ;
-
-    dma->dma_m2m_config.direction = DMA_MEM_TO_MEM;
-    dma->dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-    dmaengine_slave_config(dma->ch, &dma->dma_m2m_config);
-    dma->dma_m2m_desc = dma->ch->device->device_prep_dma_memcpy(dma->ch,
-                                        dma->phys_to, dma->phys_from,
-                                        dma->data_type * dma->frame_size * dma->frame_count,0);
-    dma->dma_m2m_desc->callback = dma_memcpy_callback_to_buffer;
-    dmaengine_submit(dma->dma_m2m_desc);
-    dma_async_issue_pending (dma->ch);
-}
-
-// dma to buffer channel init
-static int dma_mem_transfer_to_store_buffer(void)
-{
-    struct dma_transfer* dma = &dma_buffer ;
-    dma_cap_mask_t dma_m2m_mask;
-    struct imx_dma_data m2m_dma_data = {0};
-
-    dma_cap_zero (dma_m2m_mask);
-    dma_cap_set (DMA_SLAVE, dma_m2m_mask);
-    m2m_dma_data.peripheral_type = IMX_DMATYPE_MEMORY;
-    m2m_dma_data.priority = DMA_PRIO_HIGH;
-
-    memset(dma, 0, sizeof(struct dma_transfer));
-    dma->frame_size  =  DATA_SAVE_BLOCK_SIZE_WORD  ;
-    dma->frame_count =  192 ;
-    dma->phys_from   =  DMA_START_ADDR   ;
-    dma->phys_to     =  BUFF_START_ADDR  ;
-    dma->data_type   = 0x02;
-    dma->status      = 0;
-
-    dma->ch = dma_request_channel(dma_m2m_mask, dma_m2m_filter, &m2m_dma_data);
-    if (!dma->ch) {
-        printk(KERN_ERR "Could not get DMA with dma_request_channel()\n");
-        return -ENOMEM;
-    }
-
-    return 0;
-}
-
 /*
  * The callback gets called by the DMA interrupt handler after
  * the transfer is complete.
@@ -196,18 +106,18 @@ static int dma_mem_transfer_to_store_buffer(void)
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
+    DataDmaCounter++;
+    StoreCurrentIndex++;
+    if(StoreCurrentIndex > MaxStoreIndex) {
+        /* out of range , restart from 0x30000000 */
+        StoreCurrentIndex = 0 ;
+        StoreIndexCircled++ ;
+    }
 
-    dma_to_store_buffer() ;
-    do {
-        config[1]++ ;
-        OFFSET = config[1] & 0x00000003 ;
-    } while(OFFSET == config[2]) ;
-    
     if (dma_data.frame_count != StoreFrameCount) {
         dma_data.frame_count = StoreFrameCount ;
     }
-    dma_data.phys_to = OFFSET_ADDR[OFFSET];
-
+    dma_data.phys_to = StoreCurrentIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + BUFF_START_ADDR;;
     dma_data.dma_m2m_config.direction = DMA_MEM_TO_MEM;
     dma_data.dma_m2m_config.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
     dmaengine_slave_config(dma_data.ch, &dma_data.dma_m2m_config);
@@ -216,7 +126,7 @@ static void dma_memcpy_callback_from_fpga(void *data)
                                         dma_data.data_type * dma_data.frame_size * dma_data.frame_count,0);
     dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma_data.dma_m2m_desc);
-    
+
     return ;
 }
 
@@ -285,8 +195,6 @@ static int dmatest_work (void *data)
     /* Set up transfer data */
     // DMA frome gpmc/eim to Main memory
     dma_mem_transfer_from_fpga();
-    // DMA data to store buffer
-    dma_mem_transfer_to_store_buffer() ;
 
 	gpio_request (IMX_GPIO_NR (7, 11), "GPIO_16");
 	gpio_direction_input (IMX_GPIO_NR (7, 11));
