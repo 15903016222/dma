@@ -44,12 +44,12 @@
 
 #define DmaFrameBuffer         config[0]
 #define DataDmaCounter         config[1]
-#define BufferInUse            config[2]
-#define ScanSource             config[3]
+//#define BufferInUse            config[2]
+//#define ScanSource             config[3]
 #define StoreFrameCount        config[4]
-#define EncoderCounterOffset   config[5]
-#define StepsPerResolution     config[6]
-#define ScanZeroIndexOffset    config[7]
+//#define EncoderCounterOffset   config[5]
+//#define StepsPerResolution     config[6]
+//#define ScanZeroIndexOffset    config[7]
 #define MaxStoreIndex          config[8]
 #define StoreCurrentIndex      config[9]
 #define StoreIndexCircled      config[10]
@@ -109,7 +109,7 @@ static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
     DataDmaCounter++;
-    StoreCurrentIndex++;
+
     if(StoreCurrentIndex > MaxStoreIndex) {
         /* out of range , restart from 0x30000000 */
         StoreCurrentIndex = 0 ;
@@ -128,6 +128,8 @@ static void dma_memcpy_callback_from_fpga(void *data)
                                         dma_data.data_type * dma_data.frame_size * dma_data.frame_count,0);
     dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma_data.dma_m2m_desc);
+
+    StoreCurrentIndex++;
 
     return ;
 }
