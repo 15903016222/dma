@@ -147,7 +147,7 @@ static int dma_mem_transfer_from_fpga (void)
 
     memset(&dma_data, 0, sizeof(struct dma_transfer));
     dma->phys_from	= DMA_SOURCE_ADDR;
-    dma->phys_to	= DMA_START_ADDR ;
+    dma->phys_to	= BUFF_START_ADDR ;
     dma->data_type = 0x02;
     dma->status = 0;
     dma->frame_size  =  DATA_SAVE_BLOCK_SIZE_WORD ; //DATA_FRAME_SIZE ;
@@ -221,6 +221,7 @@ static long dma_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
     switch (cmd) {
         case DMA_RESET:
             local_irq_save(flags) ;
+            DataDmaCounter = 0;
             StoreCurrentIndex = 0 ;
             StoreIndexCircled = 0 ;
             local_irq_restore(flags);
