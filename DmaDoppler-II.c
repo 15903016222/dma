@@ -54,6 +54,7 @@
 #define StoreCurrentIndex      config[9]
 #define StoreIndexCircled      config[10]
 
+static spinlock_t lock;
 volatile unsigned char* scan_mark  ;
 volatile int* config;            // config[0]  DRAW condition
 // config[1]  DMA counter
@@ -108,13 +109,15 @@ static bool dma_m2m_filter (struct dma_chan *chan, void *param)
 static void dma_memcpy_callback_from_fpga(void *data)
 {
     DmaFrameBuffer = 0xfffffff ;
-    DataDmaCounter++;
 
+    spin_lock (&lock);
+    DataDmaCounter++;
     if(StoreCurrentIndex > MaxStoreIndex) {
         /* out of range , restart from 0x30000000 */
         StoreCurrentIndex = 0 ;
         StoreIndexCircled++ ;
     }
+    spin_unlock (&lock);
 
     if (dma_data.frame_count != StoreFrameCount) {
         dma_data.frame_count = StoreFrameCount ;
@@ -125,11 +128,14 @@ static void dma_memcpy_callback_from_fpga(void *data)
     dmaengine_slave_config(dma_data.ch, &dma_data.dma_m2m_config);
     dma_data.dma_m2m_desc = dma_data.ch->device->device_prep_dma_memcpy(dma_data.ch,
                                         dma_data.phys_to, dma_data.phys_from,
-                                        dma_data.data_type * dma_data.frame_size * dma_data.frame_count,0);
+                                        dma_data.data_type * dma_data.frame_size * dma_data.frame_count,
+                                        0);
     dma_data.dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma_data.dma_m2m_desc);
 
+    spin_lock (&lock);
     StoreCurrentIndex++;
+    spin_unlock (&lock);
 
     return ;
 }
@@ -165,7 +171,8 @@ static int dma_mem_transfer_from_fpga (void)
     dmaengine_slave_config(dma->ch, &dma->dma_m2m_config);
     dma->dma_m2m_desc = dma->ch->device->device_prep_dma_memcpy(dma->ch,
                                         dma->phys_to, dma->phys_from,
-                                        dma->data_type * dma->frame_size * dma->frame_count,0);
+                                        dma->data_type * dma->frame_size * dma->frame_count,
+                                        0);
     dma->dma_m2m_desc->callback = dma_memcpy_callback_from_fpga;
     dmaengine_submit(dma->dma_m2m_desc);
 
@@ -213,18 +220,17 @@ static int dmatest_work (void *data)
 
 static long dma_ioctl (struct file *filp, unsigned int cmd, unsigned long arg)
 {
-    unsigned long flags;
     unsigned int tmp, i;
     if (arg)
         i = copy_from_user(&tmp,(void *)arg,sizeof(tmp));
 
     switch (cmd) {
         case DMA_RESET:
-            local_irq_save(flags) ;
+            spin_lock (&lock);
             DataDmaCounter = 0;
             StoreCurrentIndex = 0 ;
             StoreIndexCircled = 0 ;
-            local_irq_restore(flags);
+            spin_unlock (&lock);
             break;
         default:
             break;
@@ -262,6 +268,9 @@ static int __init dmatest_init(void)
 
     /* register a character device */
     misc_register(&dma_misc);
+
+    /* init spinlock */
+    spin_lock_init(&lock);
 
     request_mem_region(DMA_START_ADDR, DMA_DATA_LENGTH, "dma_data");
     data_addr = (unsigned int )ioremap(DMA_START_ADDR, DMA_DATA_LENGTH);
