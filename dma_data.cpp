@@ -175,14 +175,6 @@ void DmaData::save_dma_data(void)
 {
     printf ("%s[%d] \n", __func__, __LINE__);
 
-    //    set_file_name(NULL);
-
-    //    m_fdFile = open (m_fileName, O_RDWR | O_CREAT);
-    //    if (m_fdFile < 0) {
-    //        printf ("Open the file of saving dmadata failed. \n");
-    //        return ;
-    //    }
-
     if (ScanSource) {
         // encoder
         transmit_dma_data(X_ENCODER, Y_ENCODER);
@@ -194,32 +186,3 @@ void DmaData::save_dma_data(void)
     return ;
 }
 
-//char *DmaData::set_file_name (char *fileName)
-//{
-//    if (NULL == fileName) {
-//        if (m_fileName) {
-//            delete[] m_fileName;
-//            m_fileName = NULL;
-//        }
-//        m_fileName = new char[512];
-//        int i = 0;
-//        sprintf (m_fileName, "/media/card/data%d", i);
-//        while (!access (m_fileName, F_OK)) {
-//            sprintf (m_fileName, "/media/card/data%d", ++i);
-//        }
-//    } else {
-//        sprintf (m_fileName, "/media/card/%s", fileName);
-//    }
-
-//    printf ("%s\n", m_fileName);
-//    return m_fileName;
-//}
-
-int m_scanDirection;
-int m_stepDirection;
-int m_fdMem;
-int m_fdFile;
-unsigned char *m_addr;
-unsigned int *m_config;
-unsigned char *m_addrMem;
-const char *m_fileName;
