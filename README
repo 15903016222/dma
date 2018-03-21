@@ -1,4 +1,4 @@
-mxc_sdma_memcopy_test.c 飞思卡尔官方测试SDMA例程，驱动示例，需要编译成.ko文件
+mxc_sdma_memcopy_test.c 飞思卡尔imx6q官方测试SDMA例程，驱动示例，需要编译成.ko文件
 mem_2_mem_demo.c 预留内存与预留内存之间的数据传输例程，驱动示例，需要编译成.ko文件。
 mxc_test.c 测试驱动示例的应用程序，编译成可执行文件。
 
