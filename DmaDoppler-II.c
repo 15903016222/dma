@@ -42,17 +42,26 @@
 #define DATA_SAVE_BLOCK_SIZE_BIT     1024
 #define DATA_SAVE_BLOCK_SIZE_WORD     512
 
-#define DmaFrameBuffer         config[0]
-#define DataDmaCounter         config[1]
-//#define BufferInUse            config[2]
-//#define ScanSource             config[3]
-#define StoreFrameCount        config[4]
-//#define EncoderCounterOffset   config[5]
-//#define StepsPerResolution     config[6]
-//#define ScanZeroIndexOffset    config[7]
-#define MaxStoreIndex          config[8]
-#define StoreCurrentIndex      config[9]
-#define StoreIndexCircled      config[10]
+#define DmaFrameBuffer              config[0]
+#define DataDmaCounter              config[1]
+#define BufferInUse                 config[2]
+#define ScanSource                  config[3]
+#define StoreFrameCount             config[4]
+#define EncoderCounterOffset        config[5]
+#define StepsPerResolution          config[6]
+#define ScanZeroIndexOffset         config[7]
+#define MaxStoreXIndex               config[8]
+#define StoreCurrentIndex           config[9]
+#define StoreIndexCircled           config[10]
+#define Y_ENCODER                   config[11] // 定义步进轴
+#define Y_ENCODER_COUNTER_OFFSET    config[12]
+#define Y_ENCODER_RESOLUTION        config[13]
+#define Y_AREA_RESOLUTION           config[14]
+#define Y_AREA_OFFSET               config[15]
+#define MaxStoreYIndex              config[16]
+#define X_ENCODER                   config[17] // 定义扫查轴
+#define CurrentPos                  config[18] // 当前存储位置
+#define MaxStoreIndex               config[19] // storebuffer最大的存储个数
 
 static spinlock_t lock;
 volatile unsigned char* scan_mark  ;

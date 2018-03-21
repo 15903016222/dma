@@ -36,7 +36,7 @@
 #define MaxStoreYIndex              m_config[16]
 #define X_ENCODER                   m_config[17] // 定义扫查轴
 #define CurrentPos                  m_config[18] // 当前存储位置
-#define MaxStoreBufferIndex         m_config[19] // storebuffer最大的存储个数
+#define MaxStoreIndex               m_config[19] // storebuffer最大的存储个数
 
 // SaveDmaData 
 DmaData::DmaData () : m_fileName (FILE_NAME)
@@ -73,13 +73,13 @@ void DmaData::transmit_dma_data (void)
     int res = -1;
     unsigned char *buff = NULL;
     unsigned int size = 0;
-    unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
+    unsigned int tmp_index = ScanTimmerCircled * MaxStoreIndex + ScanTimmerCounter;
     m_current_pos = CurrentPos;
     for ( ; m_current_pos < tmp_index; ) {
         lseek (m_fdFile,
                m_current_pos * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
                SEEK_SET);
-        buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+        buff = (m_current_pos % MaxStoreIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
         res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
     }
     CurrentPos = m_current_pos;
@@ -96,7 +96,7 @@ void DmaData::transmit_dma_data (int axis)
     int EncoderIndex;
     int *pEncoderIndex = &EncoderIndex;
     unsigned char *buff = NULL;
-    unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
+    unsigned int tmp_index = ScanTimmerCircled * MaxStoreIndex + ScanTimmerCounter;
     m_current_pos = CurrentPos;
     printf ("%s[%d] \n", __func__, __LINE__);
     for ( ; m_current_pos < tmp_index; ++m_current_pos) {
@@ -117,7 +117,7 @@ void DmaData::transmit_dma_data (int axis)
         lseek (m_fdFile,
                EncoderIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
                SEEK_SET);
-        buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+        buff = (m_current_pos % MaxStoreIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
         res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
     }
     CurrentPos = m_current_pos;
@@ -135,7 +135,7 @@ void DmaData::transmit_dma_data (int scanAxis, int stepAxis)
         int *pEncoderIndex = &EncoderIndex;
         int yIndex;
         unsigned char *buff = NULL;
-        unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
+        unsigned int tmp_index = ScanTimmerCircled * MaxStoreIndex + ScanTimmerCounter;
         m_current_pos = CurrentPos;
         for ( ; m_current_pos < tmp_index; ++m_current_pos) {
             // 扫查轴的的坐标
@@ -153,7 +153,7 @@ void DmaData::transmit_dma_data (int scanAxis, int stepAxis)
             lseek (m_fdFile,
                    EncoderIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
                    SEEK_SET);
-            buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+            buff = (m_current_pos % MaxStoreIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
             res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
         }
         CurrentPos = m_current_pos;
