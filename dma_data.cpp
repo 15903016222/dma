@@ -36,6 +36,7 @@
 #define MaxStoreYIndex              m_config[16]
 #define X_ENCODER                   m_config[17] // 定义扫查轴
 #define CurrentPos                  m_config[18] // 当前存储位置
+#define MaxStoreBufferIndex         m_config[19] // storebuffer最大的存储个数
 
 // SaveDmaData 
 DmaData::DmaData () : m_fileName (FILE_NAME)
@@ -45,7 +46,7 @@ DmaData::DmaData () : m_fileName (FILE_NAME)
         printf ("Open mem failed. \n");
         return ;
     }
-    m_fdFile = open (FILE_NAME, O_RDWR | O_CREAT);
+    m_fdFile = open (FILE_NAME, O_RDWR | O_CREAT | O_TRUNC);
     if (m_fdFile < 0) {
         printf ("Open file failed. \n");
         return ;
@@ -73,17 +74,15 @@ void DmaData::transmit_dma_data (void)
     unsigned char *buff = NULL;
     unsigned int size = 0;
     unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
-    for ( ; CurrentPos < tmp_index; ) {
-        buff = (CurrentPos % MaxStoreXIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
-        if (CurrentPos / MaxStoreXIndex < ScanTimmerCircled) {
-            size = (MaxStoreXIndex - CurrentPos % MaxStoreXIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT;
-            CurrentPos = MaxStoreXIndex;
-        } else {
-            size = (tmp_index - CurrentPos) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT;
-        }
-        res = write (m_fdFile, buff, size);
+    m_current_pos = CurrentPos;
+    for ( ; m_current_pos < tmp_index; ) {
+        lseek (m_fdFile,
+               m_current_pos * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
+               SEEK_SET);
+        buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+        res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
     }
-    CurrentPos = tmp_index;
+    CurrentPos = m_current_pos;
     printf ("%s[%d] \n", __func__, __LINE__);
     return ;
 }
@@ -98,29 +97,30 @@ void DmaData::transmit_dma_data (int axis)
     int *pEncoderIndex = &EncoderIndex;
     unsigned char *buff = NULL;
     unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
+    m_current_pos = CurrentPos;
     printf ("%s[%d] \n", __func__, __LINE__);
-    for ( ; CurrentPos < tmp_index; ++CurrentPos) {
+    for ( ; m_current_pos < tmp_index; ++m_current_pos) {
         if (!axis) {
             // 扫查轴扫描
             memcpy ((void *)pEncoderIndex,
-                    (void *)(((CurrentPos % MaxStoreXIndex) * StoreFrameCount) + EncoderCounterOffset + m_addrMem),
+                    (void *)(((m_current_pos % MaxStoreXIndex) * StoreFrameCount) + EncoderCounterOffset + m_addrMem),
                     4);
             EncoderIndex = EncoderIndex / StepsPerResolution + ScanZeroIndexOffset;
         } else {
             // 步进轴扫查
             printf ("这种扫查方式很少.\n");
             memcpy ((void *)pEncoderIndex,
-                    (void *)((CurrentPos % MaxStoreYIndex) * StoreFrameCount + Y_ENCODER_COUNTER_OFFSET + m_addrMem),
+                    (void *)((m_current_pos % MaxStoreYIndex) * StoreFrameCount + Y_ENCODER_COUNTER_OFFSET + m_addrMem),
                     4);
             EncoderIndex = (EncoderIndex / Y_ENCODER_RESOLUTION) / Y_AREA_RESOLUTION + Y_AREA_OFFSET;
         }
-
         lseek (m_fdFile,
                EncoderIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
                SEEK_SET);
-        buff = CurrentPos * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+        buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
         res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
     }
+    CurrentPos = m_current_pos;
 
     return ;
 }
@@ -136,16 +136,16 @@ void DmaData::transmit_dma_data (int scanAxis, int stepAxis)
         int yIndex;
         unsigned char *buff = NULL;
         unsigned int tmp_index = ScanTimmerCircled * MaxStoreXIndex + ScanTimmerCounter;
-
-        for ( ; CurrentPos < tmp_index; ++CurrentPos) {
+        m_current_pos = CurrentPos;
+        for ( ; m_current_pos < tmp_index; ++m_current_pos) {
             // 扫查轴的的坐标
             memcpy ((void *)pEncoderIndex,
-                    (void *)(((CurrentPos % MaxStoreXIndex) * StoreFrameCount) + EncoderCounterOffset + m_addrMem),
+                    (void *)(((m_current_pos % MaxStoreXIndex) * StoreFrameCount) + EncoderCounterOffset + m_addrMem),
                     4);
             EncoderIndex = EncoderIndex / StepsPerResolution + ScanZeroIndexOffset;
             // 步进轴的坐标
             memcpy ((void *)&yIndex,
-                    (void *)((CurrentPos % MaxStoreYIndex) * StoreFrameCount + Y_ENCODER_COUNTER_OFFSET + m_addrMem),
+                    (void *)(((m_current_pos % MaxStoreYIndex) * StoreFrameCount) + Y_ENCODER_COUNTER_OFFSET + m_addrMem),
                     4);
             yIndex = ( yIndex / Y_ENCODER_RESOLUTION) / Y_AREA_RESOLUTION + Y_AREA_OFFSET;
             // 存储位置坐标
@@ -153,9 +153,10 @@ void DmaData::transmit_dma_data (int scanAxis, int stepAxis)
             lseek (m_fdFile,
                    EncoderIndex * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT,
                    SEEK_SET);
-            buff = CurrentPos * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
+            buff = (m_current_pos % MaxStoreBufferIndex) * StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT + m_addrMem;
             res = write (m_fdFile, buff, StoreFrameCount * DATA_SAVE_BLOCK_SIZE_BIT);
         }
+        CurrentPos = m_current_pos;
     } else if (!scanAxis) {
         // 一维扫查 --- 步进轴扫查
         transmit_dma_data(1);

@@ -17,4 +17,5 @@ private:
 	unsigned char *m_addr;
         unsigned int  *m_config;
 	unsigned char *m_addrMem;
+        unsigned int m_current_pos;
 };
